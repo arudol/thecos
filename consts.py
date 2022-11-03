@@ -1,0 +1,17 @@
+import scipy.constants as const
+# ALL IN CGS !!!
+
+sigma_t = const.physical_constants['Thomson cross section'][0]*1.e4 #cm2
+c0 = const.c*1.e2 #cm/s
+m_e = const.m_e * 1.e3 #g
+m_p = const.m_p * 1.e3 #g
+kappa_pp = 0.5
+sigma_pp = 5.e-26 # cm2
+k_B_erg = 1.380649 * 1.e-16 # erg/K
+k_B_eV = 8.617333262*1.e-5
+a = 7.56e-15  # erg/cm3/K4
+h =6.6261* 1.e-27 #cm2 g s-1
+hbar = h/(2* np.pi)
+e = 4.8e-10 # statC
+alpha_f = e**2/(hbar *c0)
+lambda_C = h /(m_e *c0)
