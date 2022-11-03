@@ -42,9 +42,8 @@ class SimulationManager(object):
 		self.BIN_X = config.BIN_X
 		self.XI = config.XI
 		self.D_X = config.D_X
-		self.energygrid = np.asarray([np.exp((self.XI + i) * self.D_X) for i in self.BIN_X])
+		self.energygrid = np.asarray([np.exp((self.XI + i) * self.D_X) for i in range(self.BIN_X)])
 
-		
 
 	def initialise_modules(self):
 	## Reads through all the modules specified in the config and adds them to the run ##
@@ -77,7 +76,7 @@ class SimulationManager(object):
 	def evolve_one_timestep():
 	## Evolve the photon distribution for one timestep ## 
 		for mod in self.modules:
-			mod.pass_coefficients(self.photonarray)
+			mod.pass_coefficients()
 
 	def clear_internal_arrays():
 	## Clear internal arrays of all modules ##
