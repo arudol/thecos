@@ -11,7 +11,6 @@ class Dummy(object):
 		self._escapeterms = np.zeros(sim.BIN_X)
 
 		self._BIN_X = sim.BIN_X
-		self._XI = sim.XI
 		self._D_X = sim.D_X
 		self._energygrid = sim.energygrid
 
@@ -48,8 +47,14 @@ class Dummy(object):
 		#	self._escapeterms[i] = self.alpha_freefree_Vurm2011(x)
 	#		self._sourceterms[i] = self.j_freefree_Vurm2011(x)
 
-		sim.add_to_escapeterms(self._escapeterms)
-		sim.add_to_sourceterms(self._sourceterm)
+		self.sim.add_to_escapeterms(self._escapeterms)
+		self.sim.add_to_sourceterms(self._sourceterms)
+
+	def get_injectionrate(self):
+		return self._sourceterms
+
+	def get_coolingrate(self):
+		return self._escapeterms
 
 
 	

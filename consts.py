@@ -1,4 +1,5 @@
 import scipy.constants as const
+import numpy as np
 # ALL IN CGS !!!
 
 sigma_t = const.physical_constants['Thomson cross section'][0]*1.e4 #cm2

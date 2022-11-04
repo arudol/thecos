@@ -1,7 +1,6 @@
 ## Grid definitions
-
 BIN_X = 620
-X_I = 280
+X_I = -280
 D_X = 0.1
 delta_t = 0.1
 

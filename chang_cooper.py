@@ -1,6 +1,6 @@
 import numpy as np
 
-from pychangcooper.tridiagonal_solver import TridiagonalSolver
+from tridiagonal_solver import TridiagonalSolver
 
 
 def halfgrid_generator(grid):
@@ -41,11 +41,11 @@ class ChangCooper(object):
         self._n_grid_points = len(grid)
         self._max_grid = np.max(grid)
         self._step = np.log(grid[1]) - np.log(grid[0])
-        
-        self._dispersion_term = np.zeros(n_grid_points)
-        self._heating_term = np.zeros(n_grid_points)
-        self._escape_grid = np.zeros(n_grid_points)
-        self._source_grid = np.zeros(n_grid_points)
+
+        self._dispersion_term = np.zeros(len(grid))
+        self._heating_term = np.zeros(len(grid))
+        self._escape_grid = np.zeros(len(grid))
+        self._source_grid = np.zeros(len(grid))
 
         self._delta_t = delta_t
         self._iterations = 0
@@ -317,12 +317,6 @@ class ChangCooper(object):
         """
         Solve for the next time step.
         """
-
-        # if we are storing the solutions, then append them
-        # to the history
-
-        if self._store_progress:
-            self._saved_grids.append(self._n_current)
 
         # set up the right side of the tridiagonal equation.
         # This is the current distribution plus the source
