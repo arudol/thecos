@@ -3,12 +3,10 @@ import numpy as np
 from pychangcooper.tridiagonal_solver import TridiagonalSolver
 
 
-def log_grid_generator(n_steps, grid_max):
-    step = np.exp((1.0 / n_steps) * np.log(grid_max))
-    step_plus_one = step + 1.0
-
-    # initialize all the grid points
-    grid = np.zeros(n_steps)
+def halfgrid_generator(grid):
+    delta_x = np.log(grid[1]) - np.log(grid[0])
+    step_plus_one = delta_x +1
+    n_steps = len(grid) 
 
     half_grid = np.zeros(n_steps - 1)
 
@@ -16,22 +14,18 @@ def log_grid_generator(n_steps, grid_max):
     # we also make squared terms just incase
     for i in range(n_steps):
 
-        grid[i] = np.power(step, i)
-
         if i < n_steps - 1:
             half_grid[i] = 0.5 * grid[i] * step_plus_one
 
-    return grid, half_grid, step
+    return half_grid
 
 
 class ChangCooper(object):
     def __init__(
         self,
-        n_grid_points=300,
-        max_grid=1e5,
+        grid,
         delta_t=1.0,
-        initial_distribution=None,
-        store_progress=False,
+        initial_distribution=None
     ):
         """
         Generic Chang and Cooper base class. Currently, the dispersion and heating terms
@@ -43,17 +37,19 @@ class ChangCooper(object):
         :param initial_distribution: an array of an initial electron distribution
         :param store_progress: store the history of the runs
         """
-
-        self._n_grid_points = n_grid_points
+        self._grid = grid
+        self._n_grid_points = len(grid)
+        self._max_grid = np.max(grid)
+        self._step = np.log(grid[1]) - np.log(grid[0])
+        
         self._dispersion_term = np.zeros(n_grid_points)
         self._heating_term = np.zeros(n_grid_points)
+        self._escape_grid = np.zeros(n_grid_points)
+        self._source_grid = np.zeros(n_grid_points)
 
-        self._max_grid = max_grid
         self._delta_t = delta_t
         self._iterations = 0
         self._current_time = 0.0
-        self._store_progress = store_progress
-        self._saved_grids = []
 
         # first build the grid which is independent of the scheme
         self._build_grid()
@@ -71,13 +67,6 @@ class ChangCooper(object):
             self._n_current = np.array(initial_distribution)
             self._initial_distribution = initial_distribution
 
-        # define the heating and dispersion terms
-        # must be implemented in the subclasses
-        self._define_terms()
-
-        # compute the source/escape function if there is any
-        self._compute_source_function_and_escape()
-
         # compute the delta_js which control the upwind and downwind scheme
         self._compute_delta_j()
 
@@ -92,9 +81,7 @@ class ChangCooper(object):
 
         # logarithmic grid
 
-        self._grid, self._half_grid, self._step = log_grid_generator(
-            self._n_grid_points, self._max_grid
-        )
+        self._half_grid = halfgrid_generator(self._grid)
         self._grid2 = self._grid ** 2
         self._half_grid2 = self._half_grid ** 2
 
@@ -314,26 +301,17 @@ class ChangCooper(object):
 
         self._tridiagonal_solver = TridiagonalSolver(a, b, c)
 
-    def _compute_source_function_and_escape(self):
-        """
-        compute the grid of the source term. This will just be zero if there is nothing
-        added and all will be zero
-        """
+    def pass_source_terms(self, array):
+        self._source_grid= array
 
-        self._source_grid = self._source_function(self._grid)
-        self._escape_grid = self._escape_function(self._grid)
+    def pass_escape_terms(self, array):
+        self.escape_grid= array
 
-    def _source_function(self, energy):
+    def pass_heating_terms(self, array):
+        self._heating_term = array
 
-        return 0.0
-
-    def _escape_function(self, energy):
-
-        return 0
-
-    def _define_terms(self):
-
-        raise RuntimeError("Must be implemented in subclass")
+    def pass_diffusion_terms(self, array):
+        self._dispersion_term = array
 
     def solve_time_step(self):
         """
