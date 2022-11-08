@@ -96,7 +96,7 @@ class SimulationManager(object):
 		self.photonarray = self.ccsolver._n_current
 
 
-	## the next four are the interface functions for external modules. 
+	## the next four are the interface functions for external modules/ passing arrays at runtime
 
 	def add_to_sourceterms(self, array):
 		if len(array == self.BIN_X):
