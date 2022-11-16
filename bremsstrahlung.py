@@ -43,10 +43,10 @@ class Bremsstrahlung(object):
 		self.get_density()
 		self.get_current_photonarray()
 
-		for i in range(self._BIN_X):
-			x = self._energygrid[i]
-			self._escapeterms[i] = self.alpha_freefree_Vurm2011(x)
-			self._sourceterms[i] = self.j_freefree_Vurm2011(x)
+		#for i in range(self._BIN_X):
+		#	x = self._energygrid[i]
+		#	self._escapeterms[i] = self.alpha_freefree_Vurm2011(x)
+		#	self._sourceterms[i] = self.j_freefree_Vurm2011(x)
 
 		self.sim.add_to_escapeterms(self._escapeterms)
 		self.sim.add_to_sourceterms(self._sourceterms)

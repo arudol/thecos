@@ -1,7 +1,7 @@
 import numpy as np
 import config as config
 
-from chang_cooper import ChangCooper
+from chang_cooper_kompaneets import ChangCooper
 
 
 # dynamic import 
@@ -27,19 +27,29 @@ class SimulationManager(object):
 ## It reads the config, loads the modules specified in the config and initialises/evolves the run ##
 ## Important: It also holds the data and grid arrays! All modules need to be initialised with it## 
 
-	def __init__(self):
-		self.BIN_X = config.BIN_X
-		self.X_I = config.X_I
-		self.D_X = config.D_X
-		self.delta_t = config.delta_t
-		self.energygrid = np.asarray([np.exp((self.X_I + i) * self.D_X) for i in range(self.BIN_X)])
-
+	def __init__(self, BIN_X, X_I, D_X, delta_t, type_grid = 'log'):
+		self.BIN_X = BIN_X
+		self.X_I = X_I
+		self.D_X = D_X
+		self.delta_t = delta_t
+		if type_grid == 'log':
+			self.energygrid = np.asarray([np.exp((self.X_I + i) * self.D_X) for i in range(self.BIN_X)])
+		else: 
+			self.energygrid = np.asarray([(self.X_I + i) * self.D_X for i in range(self.BIN_X)])
+		#self.energygrid = np.asarray([np.exp( i * self.D_X) for i in range(self.BIN_X)])
 		# not elegant right now: properties of the plasma belong to the sim manager
+		self.type_grid = type_grid
 		self.T = 0 # electron temperature
 		self.rho = 0 # electron density
 		self.lorentz = 0 #plasma lorentz factor
 		self.radius = 0 # radius from central engine
 		self.bprime = 0 # comoving magnetic field
+		self.N = 0
+		self.rho_e = 0
+
+		# counters for the solver
+		self.time = 0
+		self.n_iterations = 0
 
 
 	def initialise_modules(self):
@@ -74,7 +84,10 @@ class SimulationManager(object):
 				print("Initial photon array has incorrect length, setting zero")
 				self.photonarray = np.zeros(self.BIN_X)
 
-		self.ccsolver = ChangCooper(self.energygrid, self.delta_t, self.photonarray)
+		self.ccsolver = ChangCooper(self.energygrid, self.delta_t, self.photonarray, 
+			Theta_e = self.T, rho_e = self.rho_e, N = self.N, type_grid = self.type_grid)
+
+		self.half_grid = self.ccsolver.half_grid
 
 	def evolve_one_timestep(self):
 	## Evolve the photon distribution for one timestep ## 
@@ -84,16 +97,24 @@ class SimulationManager(object):
 			mod.calculate_and_pass_coefficents()
 
 		# pass the cooling etc terms to the solver
-		self.ccsolver.pass_source_terms(self._sourceterms)
-		self.ccsolver.pass_escape_terms(self._escapeterms)
-		self.ccsolver.pass_heating_terms(self._heatingterms)
-		self.ccsolver.pass_diffusion_terms(self._dispersionterms)
+		#self.ccsolver.pass_source_terms(self._sourceterms)
+		#self.ccsolver.pass_escape_terms(self._escapeterms)
+		#self.ccsolver.pass_heating_terms(self._heatingterms)
+		#self.ccsolver.pass_diffusion_terms(self._dispersionterms)
+
+		self.ccsolver.Theta_e = self.T
+		self.ccsolver.rho_e = self.rho_e
+		self.ccsolver.N = self.N
+		self.ccsolver.delta_t = self.delta_t
 
 		# let the solver evolve a timestep
 		self.ccsolver.solve_time_step()
 
 		# update the core-internal photon array
-		self.photonarray = self.ccsolver._n_current
+		self.photonarray = self.ccsolver.n
+		self.delta_j = self.ccsolver.delta_j
+		self.time  = self.ccsolver.current_time
+		self.n_iterations = self.ccsolver.n_iterations
 
 
 	## the next four are the interface functions for external modules/ passing arrays at runtime
