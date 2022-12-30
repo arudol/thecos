@@ -1,7 +1,8 @@
 import numpy as np
 from consts import * 
+from scipy.integrate import simps
 
-class Bremsstrahlung(object):
+class DoubleCompton(object):
 
 	def __init__(self, sim):
 		## Initialise , taking an instance of SimulationManager such that energy grids etc are the same
@@ -26,8 +27,8 @@ class Bremsstrahlung(object):
 
 	def get_temperature(self):
 		## Get electron temperature from simulation class ## 
-		self._Theta = getattr(self.sim, 'T') # dimensionless
-		self._T = self._Theta * m_e * c0**2 / k_B_erg # Kelvin
+		self._Theta = getattr(self.sim, 'T')
+		self._T = self._Theta * m_e * c0**2 / k_B_erg
 
 	def get_density(self):
 		## Get matter density from simulation class ## 
@@ -37,10 +38,15 @@ class Bremsstrahlung(object):
 		## Get current photon array from simulation class ## 
 		self._photonarray = getattr(self.sim, 'photonarray')
 
+	def calculate_n_photons(self):
+		array_to_integrate = self._energygrid**2 * self._photonarray
+		n_integral = simps(array_to_integrate, self._energygrid)
+		res = 8 * np.pi * (m_e* c0**2)**3 /(h *c0)**3 * n_integral
+		self._N = res
 
 	def get_current_photonnumber(self):
 		## Get current photon N from simulation class ## 
-		self._N = getattr(self.sim, 'N')
+		self._N = getattr(self.sim, 'N')		
 
 
 	def calculate_and_pass_coefficents(self):
@@ -48,57 +54,48 @@ class Bremsstrahlung(object):
 		self.get_temperature()
 		self.get_density()
 		self.get_current_photonarray()
+		self.get_current_photonnumber()
 		self.calculate_terms()
 
 		self.sim.add_to_escapeterms(self._escapeterms)
 		self.sim.add_to_sourceterms(self._sourceterms)
 
+
 	def calculate_terms(self):
 		for k in range(self._BIN_X):
 			x = self._energygrid[k]
-			self._escapeterms[k] = self.alpha_freefree_Vurm2011(x)
-			self._sourceterms[k] = self.j_freefree_Vurm2011(x)
+			self._escapeterms[k] = self.alpha_dc_Vurm2011(x)
+			self._sourceterms[k] = self.j_dc_Vurm2011(x)
 
-	def Theta(self, T):
-	## Return dimensionless photon energy ##
-		return k_B_erg*self._T/(m_e*c0**2)
-
-	def gff(self, x, Theta):
-	## gaunt factor ##
-		res = np.sqrt(3)/np.pi* np.log(2.25 * Theta/x)
+	def gaunt_theta(self, theta):
+		res = (1+ 13.91*theta + 11.05 * theta**2 + 19.92 * theta**3 )**(-1.)
 		return res
 
-	def alpha_freefree_Vurm2011(self, x):
-	## photon absorption as in Vurm 2011 ##
+	def alpha_dc_Vurm2011_planck(self, x):
+	## photon absorption as in Vurm 2011 A 16##
 		E = x * m_e*c0**2
-		lgr = E/(k_B_erg*self._T)
-
-		#if lgr > 1.e10: lgr = 1.e10
-		expo_factor = (1- np.exp(-lgr))
-
-		#prefactor = 4 *e**6 *h**2 /(3 * m_e * c0)* (2/np.pi/(3*k_B_erg*m_e))**(1/2)
-		prefactor = alpha_f  * lambda_C**3 *sigma_t * c0/(np.sqrt(3 *8* np.pi**3))
-		#res = prefactor *self._T**(-1/2.)*(self._n_e/m_p)**2*E**(-3) *self.gff(E, self._T) * expo_factor
-		res = prefactor *self._Theta**(-1/2.)*(self._n_e)**2*x**(-3) *self.gff(x, self._Theta) * expo_factor
-		if res < 0.0: res = 0.0
+		prefactor = 38.4 * alpha_f / np.pi 
+		res = prefactor *(self._T * k_B_erg/E)**(2) * self._Theta**2 * self.gaunt_theta(self._Theta) * sigma_t * c0 * self._n_e
 		return res
 
-	def j_freefree_Vurm2011(self, x):
-	## photon emission as in Vurm 2011 ##
-		#E = x * m_e*c0**2
-		#prefactor =8 *e**6 *c0 /(3 * m_e)* (2/np.pi/(3*k_B_erg*m_e))**(1/2)
-		#res = prefactor*self._T**(-1/2.)*(self._n_e/m_p)**2 *self.gff(E, self._T)
-		#res = prefactor*self._T**(-1/2.)*(self._n_e)**2 *self.gff(E, self._T)
-
+	def alpha_dc_Vurm2011(self, x):
+	## photon absorption as in Vurm 2011  A 14 ##
 		E = x * m_e*c0**2
-		alpha = self.alpha_freefree_Vurm2011(x)
+		prefactor = 2 * alpha_f / np.pi**2 * lambda_C**3 *sigma_t *c0
+		res = prefactor *x**(-2) * self._Theta * self.gaunt_theta(self._Theta) * self._n_e * self._N
+		return res
+
+	def j_dc_Vurm2011(self, x):
+	## photon emission from alpha as in Vurm 2011 A 14 and using Kirchhoffs law to link alpha and j ##
+		E = x * m_e*c0**2
+		alpha = self.alpha_dc_Vurm2011(x)
 
 		lgr = x/self._Theta
+		#if np.abs(lgr) < 1.e-80: lgr = 1.e-80
 
-		B_E = 2 * E**3 /(h*c0)**2 * (np.exp(lgr) -1 )**(-1)
-		B_E = (np.exp(lgr) -1 )**(-1)
+	#	B_E = 2 * E**3 /(h*c0)**2 * (np.exp(lgr) -1 )**(-1) # this is not in photon momentum space!
+		B_E =  (np.exp(lgr) -1 )**(-1)
 		res = alpha * B_E
-
 		return res
 
 	def get_injectionrate(self):

@@ -3,7 +3,7 @@ import numpy as np
 from tridiagonal_solver import TridiagonalSolver
 from mpmath import *
 from consts import *
-from scipy import trapz
+from scipy.integrate import trapz, simps
 
 
 def generate_subgrids_from_nonuniformgrid(grid, type_grid):
@@ -54,9 +54,10 @@ class ChangCooper(object):
         delta_t=1.0,
         initial_distribution=None, 
         Theta_e = 0, 
-        rho_e = 0, 
+        n_e = 0, 
         N = 0, 
-        type_grid = 'log'
+        type_grid = 'log',
+        CN_solver = False
     ):
         """
         Generic Chang and Cooper base class for Kompaneets equation.
@@ -64,23 +65,26 @@ class ChangCooper(object):
         :param delta_t: the time step in the equation
         :param initial_distribution: an array of an initial electron distribution
         :param Theta_e : electron temperature
-        :param rho_e: electron number density
+        :param n_e: electron number density
         :param N: total number of photons
+        :param type_grid: set to logarithmic ('log') or linear ('lin'), default is 'log'
+        :param CN_solver: Switch to use Crank-Nicolson solver, default is False
         """
         
         self.Theta_e = Theta_e
-        self.rho_e = rho_e
-        self.N = N
+        self._n_e = n_e
+        self._N = N
 
         self._grid = grid
         self._n_grid_points = len(grid)
-
         self._dispersion_term = np.zeros(len(grid)-1)
+        self._dispersion_term_kompaneets = np.zeros(len(grid)-1)
         self._heating_term = np.zeros(len(grid)-1)
-        self._pre_factor_term = np.ones(len(grid))
+        self._heating_term_kompaneets = np.zeros(len(grid)-1)
+        self._pre_factor_term_kompaneets = np.ones(len(grid))
         self._escape_grid = np.zeros(len(grid))
         self._source_grid = np.zeros(len(grid))
-
+        self.CN_solver = CN_solver
         self._delta_t = delta_t
         self._iterations = 0
         self._current_time = 0.0
@@ -119,70 +123,125 @@ class ChangCooper(object):
         self._grid2 = self._grid ** 2
         self._half_grid2 = self._half_grid ** 2
 
-    def compute_N_total(self):
-        prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
-        array_to_integrate = self._grid*self._grid*self._n_current
+    def set_N_internal(self):
+        """
+        Set the solver-internal total number N from the real N (includes correction for pre-factors)
 
-        self.N = prefactor * trapz(array_to_integrate, self._grid) 
+        """
+        self._N = self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
 
     def find_C_equilibrium_solution(self):
+        """
+        Calculate the normalisation constant C of the equilibrium function f_e of Chang & Cooper 1970
 
-        self.compute_N_total()
+        :returns: C
 
-        prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
+        """
 
-        first_guess = self.Theta_e**3 *  prefactor/self.N
+        self.set_N_internal()
 
-        f = lambda x: self.N/(prefactor*self.Theta_e**3) - polylog(3,1/x)
+        #prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
+        prefactor = 8 * np.pi
 
+        last_guess = self.Theta_e**3 *  prefactor/self._N
+
+        #def sum_n(x, N):
+        #    return sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
+        quad_c = -1/(2**3)
+        quad_b = -1
+        quad_a = self._N / self.Theta_e**3 /  prefactor
+
+        current_guess =  (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
         mp.dps = 30; mp.pretty = True
+        N = 3
+        while np.abs((last_guess-current_guess)/current_guess) > 0.01:
+            f = lambda x: self._N/(prefactor*self.Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
+            try:
+                next_guess = float(findroot(f, current_guess))
+            except ValueError: 
+                    return 0.0
+            last_guess = current_guess
+            current_guess = next_guess
+            N +=1 
+        C = current_guess
+        print(C, N)
+        #quad_c = -1/(2**3)
+        #quad_b = -1
+        #quad_a = self._N / self.Theta_e**3 /  prefactor
 
-        C = findroot(f, first_guess)
-        if type(C) == 'mpc':
-            print(C)
-            return 0.5
-        #C = first_guess
-        else: return C
+        #first_guess = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
+
+        #f = lambda x: self._N/(prefactor*self.Theta_e**3)*x**6 - \
+        #                   (x**5 + 1/2**3 * x**4 + 1/3**3 *x**3 + 1/ 4**3 *x**2 + 1/ 5**3 *x + 1/6**3 ) 
+
+        #mp.dps = 30; mp.pretty = True
+
+        #first_guess = self.Theta_e**3 *  prefactor/self._N
+
+        #try:
+            #C = float(findroot(f, first_guess))
+        #except ValueError: 
+        #    C = 0.0
+
+        return C
 
     def f_e(self, i, C):
+        """
+        Calculate the equilibrium function f_e of Chang & Cooper 1970
+
+        :param i: Gridpoint
+        :param C: Normalisation constant
+
+        :returns: f_e (i)
+
+        """
 
         res = 0.0
 
         lgr = self._grid[i]/self.Theta_e
-        #if not np.abs(lgr) < 1.e-20:
+        if np.abs(lgr) < 1.e-80: lgr = 1.e-80
+        
         res = 1 / (C * np.exp(lgr) -1)
-        #else:
-        #       res = 1 / (C * np.exp(1.e-20) -1)
 
         return res
 
 
 
     def _compute_delta_j_kompaneets(self):
+        """
+        Calculate delta_j for the Kompaneets kernel following Chang & Cooper 1970
 
-        C = self.find_C_equilibrium_solution()
+        """
 
         self._delta_j = np.zeros(self._n_grid_points - 1)
 
-        for j in range(self._n_grid_points - 1):
-            ## solve the quadratic equation that corresponds to zero flux condition
-            fj = self.f_e(j, C)
-            fjplusone = self.f_e(j+1, C)
-            quad_c = self.Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
-            quad_b = fj -fjplusone - 2* fjplusone**2 +2*fjplusone*fj
-            quad_a = fjplusone**2 + fj**2
-            if quad_a == 0:
+        C = self.find_C_equilibrium_solution()
+        if C==0.0:
+            for j in range(self._n_grid_points - 1):
                 self._delta_j[j] = 1/2.
-            else:
-                root_1 = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
-                if root_1 < 0 or root_1 > 1:
-                    root_2 = (-quad_b - np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
-                    if root_2 < 0 or root_2 > 1:
+
+        else: 
+            for j in range(self._n_grid_points - 1):
+                ## solve the quadratic equation that corresponds to zero flux condition
+                try:
+                    fj = self.f_e(j, C)
+                    fjplusone = self.f_e(j+1, C)
+                    quad_c = self.Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
+                    quad_b = fj -fjplusone - 2* fjplusone**2 +2*fjplusone*fj
+                    quad_a = fjplusone**2 + fj**2
+                    if quad_a == 0:
                         self._delta_j[j] = 1/2.
                     else:
-                        self._delta_j[j] = root_2
-                else:
-                    self._delta_j[j] = root_1
+                        root_1 = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
+                        if root_1 < 0 or root_1 > 1:
+                            root_2 = (-quad_b - np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
+                            if root_2 < 0 or root_2 > 1:
+                                self._delta_j[j] = 1/2.
+                            else:
+                                self._delta_j[j] = root_2
+                        else:
+                            self._delta_j[j] = root_1
+                except ZeroDivisionError: self._delta_j[j] = 1/2.
 
         #print(self._delta_j)
 
@@ -191,8 +250,11 @@ class ChangCooper(object):
 
 
     def _delta_j_onehalf(self):
+        """
+        Set all delta_j = 1/2
 
-        #C = self.find_C_equilibrium_solution()
+        """
+
 
         self._delta_j = np.zeros(self._n_grid_points - 1)
 
@@ -203,25 +265,35 @@ class ChangCooper(object):
         self._one_minus_delta_j = 1 - self._delta_j
 
     def _construct_terms_kompaneets(self):
-        self._dispersion_term = np.zeros(len(self._grid)-1)
-        self._heating_term = np.zeros(len(self._grid)-1)
-        self._pre_factor_term = np.ones(len(self._grid))
+        """
+        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
+        """
+        self._dispersion_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._heating_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._pre_factor_term_kompaneets = np.ones(len(self._grid))
 
         for j in range(self._n_grid_points):
             if self._n_current[j]< 0: self._n_current[j] = 0
 
         for j in range(self._n_grid_points - 1):
-            self._heating_term[j] = 1 + (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
-            self._heating_term[j] *= self._half_grid[j]**4
+            #if self._n_current[j+1]/max(self._n_current) > 1.e-150:
+            self._heating_term_kompaneets[j] = 1 + (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #only n2 term:
+                #self._heating_term[j] = (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #self._heating_term[j] = 1
+            self._heating_term_kompaneets[j] *= self._half_grid[j]**4
+            #else: self._heating_term[j] = 0.
 
-            self._dispersion_term[j] = self.Theta_e
-            self._dispersion_term[j] *= self._half_grid[j]**4
+            self._dispersion_term_kompaneets[j] = self.Theta_e
+            self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4
 
         for j in range(self._n_grid_points):
-            self._pre_factor_term[j] = self.rho_e * sigma_t *c0/ self.grid[j]**2
+            self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
 
     def _compute_delta_j(self):
         """
+        old function to compute the delta_js, for a non-Kompaneets kernel.
+
         delta_j controls where the differences are computed. If there are no dispersion
         terms, then delta_j is zero
         """
@@ -277,6 +349,15 @@ class ChangCooper(object):
 
             one_over_delta_grid_bar = 1.0 / self._delta_grid[k]
 
+            # The B_j +/- 1/2 from CC, Kompaneets part
+            B_forward_kompaneets = self._heating_term_kompaneets[k]
+            B_backward_kompaneets =self._heating_term_kompaneets[k - 1]
+
+            # The C_j +/- 1/2 from CC, Kompaneets part
+            C_forward_kompaneets = self._dispersion_term_kompaneets[k]
+            C_backward_kompaneets = self._dispersion_term_kompaneets[k - 1]
+
+
             # The B_j +/- 1/2 from CC
             B_forward = self._heating_term[k]
             B_backward =self._heating_term[k - 1]
@@ -285,7 +366,8 @@ class ChangCooper(object):
             C_forward = self._dispersion_term[k]
             C_backward = self._dispersion_term[k - 1]
 
-            A_k = self._pre_factor_term[k]
+
+            A_k = self._pre_factor_term_kompaneets[k]
 
             # in order to keep math errors at a minimum, the tridiagonal terms
             # are computed in separate functions so that boundary conditions are
@@ -299,7 +381,9 @@ class ChangCooper(object):
                 one_over_delta_grid=one_over_delta_grid_bar,
                 one_over_delta_grid_bar_backward=one_over_delta_grid_backward,
                 C_backward=C_backward,
+                C_backward_kompaneets=C_backward_kompaneets,
                 B_backward=B_backward,
+                B_backward_kompaneets=B_backward_kompaneets,
                 A = A_k, 
                 delta_j_minus_one=self._delta_j[k - 1],
             )
@@ -310,9 +394,13 @@ class ChangCooper(object):
                 one_over_delta_grid_bar_backward=one_over_delta_grid_backward,
                 one_over_delta_grid_bar_forward=one_over_delta_grid_forward,
                 C_backward=C_backward,
+                C_backward_kompaneets=C_backward_kompaneets,
                 C_forward=C_forward,
+                C_forward_kompaneets=C_forward_kompaneets,
                 B_backward=B_backward,
+                B_backward_kompaneets=B_backward_kompaneets,
                 B_forward=B_forward,
+                B_forward_kompaneets=B_forward_kompaneets,
                 A = A_k, 
                 one_minus_delta_j_minus_one=self._one_minus_delta_j[k - 1],
                 delta_j=self._delta_j[k],
@@ -323,7 +411,9 @@ class ChangCooper(object):
                 one_over_delta_grid=one_over_delta_grid_bar,
                 one_over_delta_grid_bar_forward=one_over_delta_grid_forward,
                 C_forward=C_forward,
+                C_forward_kompaneets=C_forward_kompaneets,
                 B_forward=B_forward,
+                B_forward_kompaneets=B_forward_kompaneets,
                 A = A_k, 
                 one_minus_delta_j=self._one_minus_delta_j[k],
             )
@@ -344,8 +434,10 @@ class ChangCooper(object):
             one_over_delta_grid=one_over_delta_grid_bar,
             one_over_delta_grid_bar_backward=one_over_delta_grid_backward,
             C_backward=self._dispersion_term[-1],
+            C_backward_kompaneets=self._dispersion_term_kompaneets[-1],
             B_backward=self._heating_term[-1],
-            A= self._pre_factor_term[-1], 
+            B_backward_kompaneets=self._heating_term_kompaneets[-1],
+            A= self._pre_factor_term_kompaneets[-1], 
             delta_j_minus_one=self._delta_j[-1],
         )
 
@@ -355,10 +447,14 @@ class ChangCooper(object):
             one_over_delta_grid_bar_backward=one_over_delta_grid_backward,
             one_over_delta_grid_bar_forward=one_over_delta_grid_forward,
             C_backward=self._dispersion_term[-1],
+            C_backward_kompaneets=self._dispersion_term_kompaneets[-1],
             C_forward=0,
-            B_backward=self._heating_term[-1],
-            A= self._pre_factor_term[-1], 
+            C_forward_kompaneets=0,
+            B_backward_kompaneets=self._heating_term_kompaneets[-1],
+            B_backward =self._heating_term[-1],
+            A= self._pre_factor_term_kompaneets[-1], 
             B_forward=0,
+            B_forward_kompaneets=0,
             one_minus_delta_j_minus_one=self._one_minus_delta_j[-1],
             delta_j=0,
         )
@@ -384,11 +480,15 @@ class ChangCooper(object):
             one_over_delta_grid=one_over_delta_grid_bar,
             one_over_delta_grid_bar_backward=one_over_delta_grid_backward,
             one_over_delta_grid_bar_forward=one_over_delta_grid_forward,
+            C_backward_kompaneets=0,
             C_backward=0,
+            C_forward_kompaneets=self._dispersion_term_kompaneets[0],
             C_forward=self._dispersion_term[0],
+            B_backward_kompaneets=0,
             B_backward=0,
+            B_forward_kompaneets=self._heating_term_kompaneets[0],
             B_forward=self._heating_term[0],
-            A= self._pre_factor_term[0],
+            A= self._pre_factor_term_kompaneets[0],
             one_minus_delta_j_minus_one=0,
             delta_j=self._delta_j[0],
         )
@@ -396,9 +496,11 @@ class ChangCooper(object):
         c[0] = _compute_n_j_plus_one(
             one_over_delta_grid=one_over_delta_grid_bar,
             one_over_delta_grid_bar_forward=one_over_delta_grid_forward,
+            C_forward_kompaneets=self._dispersion_term_kompaneets[0],
             C_forward=self._dispersion_term[0],
+            B_forward_kompaneets=self._heating_term_kompaneets[0],
             B_forward=self._heating_term[0],
-            A= self._pre_factor_term[0],
+            A= self._pre_factor_term_kompaneets[0],
             one_minus_delta_j=self._one_minus_delta_j[0],
         )
 
@@ -409,21 +511,43 @@ class ChangCooper(object):
         b = (1 - b * self._delta_t) + self._escape_grid * self._delta_t
         c *= -self._delta_t
 
+        if self.CN_solver: 
+            a /= 2.
+            b = (b-1)/2. +1
+            c /= 2.
+
         # now make a tridiagonal_solver for these terms
 
         self._tridiagonal_solver = TridiagonalSolver(a, b, c)
 
-    def pass_source_terms(self, array):
-        self._source_grid= array
+    def add_source_terms(self, array):
+        """Add an array to the source terms of the differential equation
 
-    def pass_escape_terms(self, array):
-        self._escape_grid= array
+        :param array: array to be added, length BIN_X, defined on grid 
+        """
 
-    def pass_heating_terms(self, array):
-        pass
+        self._source_grid += array
 
-    def pass_diffusion_terms(self, array):
-        pass
+    def add_escape_terms(self, array):
+        """Add an array to the escape terms of the differential equation
+
+        :param array: array to be added, length BIN_X, defined on grid 
+        """
+        self._escape_grid += array
+
+    def add_heating_terms(self, array):
+        """Add an array to the heating terms of the differential equation
+
+        :param array: array to be added, length BIN_X-1, defined on half_grid 
+        """
+        self._heating_term += array
+
+    def add_diffusion_terms(self, array):
+        """Add an array to the diffusion terms of the differential equation
+
+        :param array: array to be added, length BIN_X-1, defined on half_grid 
+        """
+        self._diffusion_term += array
 
     def solve_time_step(self):
         """
@@ -434,28 +558,44 @@ class ChangCooper(object):
         # This is the current distribution plus the source
         # unless it is zero
 
-        self._compute_delta_j_kompaneets()
-        self._construct_terms_kompaneets()
+        #self._compute_delta_j_kompaneets()
+        #self._delta_j_onehalf()
+        #self._construct_terms_kompaneets()
         self._setup_vectors()
+
 
         d = self._n_current + self._source_grid * self._delta_t
 
+        # Calculate the terms for the Crank-Nicolson solver, see Park & Petrosian for details
+        if self.CN_solver: 
+            a = self._tridiagonal_solver._a
+            b = self._tridiagonal_solver._b
+            c = self._tridiagonal_solver._c
+            for k in range(self._n_grid_points - 2, 1, -1):
+                d[k] += self._n_current[k] -a[k]*self._n_current[k-1] -b[k]*self._n_current[k]-c[k]*self._n_current[k+1]
+            d[0] += self._n_current[0]  -b[0]*self._n_current[0] -c[0]*self._n_current[1]
+            d[-1] += self._n_current[-1] -a[-1]*self._n_current[-2] -b[-1]*self._n_current[-1]
         # set the new solution to the current one
 
         self._n_current = self._tridiagonal_solver.solve(d)
 
-        # clean any numerical diffusion if needed
-        # this must be customized
-
-        self._clean()
 
         # bump up the iteration number and the time
 
         self._iteratate()
 
-    def _clean(self):
+    def clean_terms(self):
+        """
+        Clean the internal arrays of the PDE.
 
-        pass
+        """
+        self._dispersion_term = np.zeros(len(self.grid)-1)
+        self._dispersion_term_kompaneets = np.zeros(len(self.grid)-1)
+        self._heating_term = np.zeros(len(self.grid)-1)
+        self._heating_term_kompaneets = np.zeros(len(self.grid)-1)
+        self._pre_factor_term_kompaneets = np.ones(len(self.grid))
+        self._escape_grid = np.zeros(len(self.grid))
+        self._source_grid = np.zeros(len(self.grid))
 
     def _iteratate(self):
         """
@@ -520,9 +660,7 @@ class ChangCooper(object):
 
     def reset(self):
         """
-        reset the solver to the initial electron distribution
-
-        :return:
+        reset the solver (_n_current, _iterations, _current_time) to the distribution
         """
 
         self._n_current = self._initial_distribution
@@ -534,23 +672,30 @@ def _compute_n_j_plus_one(
     one_over_delta_grid,
     one_over_delta_grid_bar_forward,
     C_forward,
+    C_forward_kompaneets,
     B_forward,
+    B_forward_kompaneets,
     A, 
-    one_minus_delta_j,
-):
+    one_minus_delta_j):
     """
     equation for the CC n_j +1 term
 
     :param one_over_delta_grid: the total change in energy
     :param one_over_delta_grid_bar_backward: the backward change in energy for the second derivative
     :param C_forward: the forward dispersion term
+    :param C_forward_kompaneets: the forward dispersion term of the kompaneets kernel
     :param B_forward: the forward heating term
+    :param B_forward_kompaneets: the forward heating term of the kompaneets kernel
     :param one_minus_delta_j: 1 - delta_j
+    :param A: the 1/A(x) in front of the kompaneets kernel
     """
 
-    return A * one_over_delta_grid* (
-        one_minus_delta_j * B_forward + one_over_delta_grid_bar_forward * C_forward
-    )
+    return (A * one_over_delta_grid* (
+        one_minus_delta_j * B_forward_kompaneets 
+        + one_over_delta_grid_bar_forward * C_forward_kompaneets)
+        + one_over_delta_grid* (
+        one_minus_delta_j * B_forward 
+        + one_over_delta_grid_bar_forward * C_forward))
 
 
 def _compute_n_j(
@@ -558,13 +703,16 @@ def _compute_n_j(
     one_over_delta_grid_bar_backward,
     one_over_delta_grid_bar_forward,
     C_backward,
+    C_backward_kompaneets,
     C_forward,
+    C_forward_kompaneets,
     B_backward,
+    B_backward_kompaneets,
     B_forward,
+    B_forward_kompaneets,
     A, 
     one_minus_delta_j_minus_one,
-    delta_j,
-):
+    delta_j):
     """
     equation for the CC n_j term
 
@@ -572,38 +720,56 @@ def _compute_n_j(
     :param one_over_delta_grid_bar_backward: the backward change in energy for the second derivative
     :param one_over_delta_grid_bar_forward: the forward change in energy for the second derivative
     :param C_forward: the forward dispersion term
+    :param C_forward: the forward dispersion term of the kompaneets kernel
     :param C_backward: the backward dispersion term
+    :param C_backward: the backward dispersion term of the kompaneets kernel
     :param B_forward: the forward heating term
+    :param B_forward: the forward heating term of the komaneets kernel
     :param B_backward: the backward heating term
+    :param B_backward: the backward heating term of the kompaneets kernel
+    :param A: the 1/A(x) in front of the kompaneets kernel
     :param one_minus_delta_j_minus_one: 1 - delta_j-1
     """
 
-    return -A * one_over_delta_grid* (
-            one_over_delta_grid_bar_forward * C_forward
-            + one_over_delta_grid_bar_backward * C_backward
-        + one_minus_delta_j_minus_one * B_backward
-        - delta_j * B_forward
-    )
+    return (-A * one_over_delta_grid* ( 
+        one_over_delta_grid_bar_forward * C_forward_kompaneets 
+        + one_over_delta_grid_bar_backward * C_backward_kompaneets 
+        + one_minus_delta_j_minus_one * B_backward_kompaneets 
+        - delta_j * B_forward_kompaneets)
+        - one_over_delta_grid* (
+        one_over_delta_grid_bar_forward * C_forward 
+        + one_over_delta_grid_bar_backward * C_backward 
+        + one_minus_delta_j_minus_one * B_backward \
+        - delta_j * B_forward))
+
 
 
 def _compute_n_j_minus_one_term(
     one_over_delta_grid,
     one_over_delta_grid_bar_backward,
     C_backward,
+    C_backward_kompaneets,
     B_backward,
+    B_backward_kompaneets,
     A,
-    delta_j_minus_one,
-):
+    delta_j_minus_one):
     """
     equation for the CC n_j-1 term
 
     :param one_over_delta_grid: the total change in energy
     :param one_over_delta_grid_bar_forward: the forward change in energy for the second derivative
     :param C_backward: the backward dispersion term
+    :param C_backward_kompaneets: the backward dispersion term of the kompaneets kernel
     :param B_backward: the backward heating term
+    :param B_backward_kompaneets: the backward heating term of the kompaneets kernel
     :param one_minus_delta_j: 1 - delta_j
+    :param A: the 1/A(x) in front of the kompaneets kernel
     """
 
-    return A * one_over_delta_grid* (
-        one_over_delta_grid_bar_backward * C_backward - delta_j_minus_one * B_backward
-    )
+    return (A * one_over_delta_grid* (
+        one_over_delta_grid_bar_backward * C_backward_kompaneets 
+        - delta_j_minus_one * B_backward_kompaneets)
+        + one_over_delta_grid* ( 
+        one_over_delta_grid_bar_backward * C_backward 
+        -delta_j_minus_one * B_backward ))
+
