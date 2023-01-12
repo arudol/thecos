@@ -57,7 +57,7 @@ class ChangCooper(object):
         n_e = 0, 
         N = 0, 
         type_grid = 'log',
-        CN_solver = False
+        CN_solver = False, 
     ):
         """
         Generic Chang and Cooper base class for Kompaneets equation.
@@ -290,6 +290,60 @@ class ChangCooper(object):
         for j in range(self._n_grid_points):
             self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
 
+
+    def _construct_terms_kompaneets_extended_by_nu(self):
+        """
+        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
+        """
+        self._dispersion_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._heating_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._pre_factor_term_kompaneets = np.ones(len(self._grid))
+
+        for j in range(self._n_grid_points):
+            if self._n_current[j]< 0: self._n_current[j] = 0
+
+        for j in range(self._n_grid_points - 1):
+            #if self._n_current[j+1]/max(self._n_current) > 1.e-150:
+            self._heating_term_kompaneets[j] = 1 + (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #only n2 term:
+                #self._heating_term[j] = (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #self._heating_term[j] = 1
+            self._heating_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self.Theta_e * self._half_grid[j]**2)
+            #else: self._heating_term[j] = 0.
+
+            self._dispersion_term_kompaneets[j] = self.Theta_e
+            self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self.Theta_e*self._half_grid[j]**2)
+
+        for j in range(self._n_grid_points):
+            self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
+
+
+    def _construct_terms_kompaneets_extended_by_p(self):
+        """
+        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
+        """
+        self._dispersion_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._heating_term_kompaneets = np.zeros(len(self._grid)-1)
+        self._pre_factor_term_kompaneets = np.ones(len(self._grid))
+
+        for j in range(self._n_grid_points):
+            if self._n_current[j]< 0: self._n_current[j] = 0
+
+        for j in range(self._n_grid_points - 1):
+            #if self._n_current[j+1]/max(self._n_current) > 1.e-150:
+            self._heating_term_kompaneets[j] = 1 + (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #only n2 term:
+                #self._heating_term[j] = (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
+                #self._heating_term[j] = 1
+            self._heating_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 14/5*self._half_grid[j])
+            #else: self._heating_term[j] = 0.
+
+            self._dispersion_term_kompaneets[j] = self.Theta_e
+            self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 14/5*self._half_grid[j])
+
+        for j in range(self._n_grid_points):
+            self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
+
     def _compute_delta_j(self):
         """
         old function to compute the delta_js, for a non-Kompaneets kernel.
@@ -310,6 +364,45 @@ class ChangCooper(object):
                 w = (
                     self._delta_grid[1:-1][j] * self._heating_term[j]
                 ) / self._dispersion_term[j]
+
+                # w asymptotically approaches 1/2, but we need to set it manually
+                if w == 0:
+
+                    self._delta_j[j] = 0.5
+
+                # otherwise, we use appropriate bounds
+                else:
+
+                    self._delta_j[j] = (1.0 / w) - 1.0 / (np.exp(w) - 1.0)
+
+        # precomoute 1- delta_j
+        self._one_minus_delta_j = 1 - self._delta_j
+
+
+    def _compute_delta_j_mix(self):
+        """
+        Compute delta_j in old way, but also accounting for Kompaneets.
+
+        delta_j controls where the differences are computed. If there are no dispersion
+        terms, then delta_j is zero
+        """
+
+        # set to zero. note delta_j[n] = 0 by default
+
+        self._delta_j = np.zeros(self._n_grid_points - 1)
+
+        dispersion_term  = self._dispersion_term +self._dispersion_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
+
+        heating_term = self._heating_term + self._heating_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
+
+        for j in range(self._n_grid_points - 1):
+
+            # if the dispersion term is 0 => delta_j = 0
+            if dispersion_term[j] != 0:
+
+                w = (
+                    self._delta_half_grid[1:-1][j] * heating_term[j]
+                ) / dispersion_term[j]
 
                 # w asymptotically approaches 1/2, but we need to set it manually
                 if w == 0:

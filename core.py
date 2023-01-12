@@ -33,7 +33,9 @@ class SimulationManager(object):
 ## It reads the config, loads the modules specified in the config and initialises/evolves the run ##
 ## Important: It also holds the data and grid arrays! All modules need to be initialised with it## 
 
-	def __init__(self, BIN_X, X_I, D_X, delta_t, type_grid = 'log', CN_solver = 'True'):
+	def __init__(self, BIN_X, X_I, D_X, delta_t, type_grid = 'log', CN_solver = False, include_kompaneets = True, 
+		kompaneets_extended_by = 'none', compute_delta_j = 'kompaneets'):
+
 		self.BIN_X = BIN_X
 		self.X_I = X_I
 		self.D_X = D_X
@@ -52,12 +54,15 @@ class SimulationManager(object):
 		self.bprime = 0 # comoving magnetic field
 		self.N = 0 # total photon number
 		self.n_e = 0 # electron number density 
-		self.CN_solver = CN_solver # Crank Nicolson solver: 0 = off 1 = on
+		self.CN_solver = CN_solver # Crank Nicolson solver: bool for on (True) and off (False)
 		self.pl_decay = 2.
 
 		# counters for the solver
 		self.time = 0
 		self.n_iterations = 0
+		self.include_kompaneets = include_kompaneets # Use the Kompaneets Kernel. Bool
+		self.kompaneets_extended_by = kompaneets_extended_by
+		self.compute_delta_j = compute_delta_j
 
 
 	def initialise_modules(self):
@@ -146,8 +151,22 @@ class SimulationManager(object):
 		self.ccsolver.n_e = self.n_e
 		self.ccsolver.delta_t = self.delta_t
 		self.ccsolver.N = self.N
-		self.ccsolver._compute_delta_j_kompaneets()
-		self.ccsolver._construct_terms_kompaneets()
+
+		if self.include_kompaneets: 
+			if self.kompaneets_extended_by == 'none':
+				self.ccsolver._construct_terms_kompaneets()
+			elif self.kompaneets_extended_by == 'frequency':
+				self.ccsolver._construct_terms_kompaneets_extended_by_nu()
+			elif self.kompaneets_extended_by == 'momentum':
+				self.ccsolver._construct_terms_kompaneets_extended_by_p()
+
+			if self.compute_delta_j == 'kompaneets':
+				self.ccsolver._compute_delta_j_kompaneets()
+			elif self.compute_delta_j == 'classic':
+				self.ccsolver._compute_delta_j_mix()
+
+		else: 
+			self.ccsolver._compute_delta_j()
 
 		# pass the cooling etc terms to the solver
 		self.ccsolver.add_source_terms(self._sourceterms)

@@ -79,7 +79,7 @@ class Cyclotron(object):
 		q = 4
 		s = 10
 		E = x * m_e*c0**2
-		E_B = h * e *self._bprime /(2 *np.pi * m_e *c0)
+		E_B = h * eStatC *self._bprime /(2 *np.pi * m_e *c0)
 		prefactor = sigma_t *c0/alpha_f * (E_B /(m_e*c0**2))**(s-1)
 		res = a * prefactor * self._Theta**(q) * x **(-s) *self._n_e
 		return res

@@ -103,7 +103,7 @@ class Adiabatic(object):
 		:param: x ,photon dimensionless energy
 		:returns: cooling timescale :math:'a_\mathrm{cool}' (1/s)
 		"""
-				return - (self._PL)/self.t_ad()/3 * x/(8 * np.pi)
+		return - (self._PL)/self.t_ad()/3 * x
 
 
 	def get_injectionrate(self):

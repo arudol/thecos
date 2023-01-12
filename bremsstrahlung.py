@@ -95,7 +95,7 @@ class Bremsstrahlung(object):
 
 		lgr = x/self._Theta
 
-		B_E = 2 * E**3 /(h*c0)**2 * (np.exp(lgr) -1 )**(-1)
+		#B_E = 2 * E**3 /(h*c0)**2 * (np.exp(lgr) -1 )**(-1)
 		B_E = (np.exp(lgr) -1 )**(-1)
 		res = alpha * B_E
 

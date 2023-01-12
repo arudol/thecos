@@ -11,10 +11,10 @@ sigma_pp = 5.e-26 # cm2
 k_B_erg = 1.380649 * 1.e-16 # erg/K
 k_B_eV = 8.617333262*1.e-5 # eV/K
 a = 7.56e-15  # erg/cm3/K4
-h =6.6261* 1.e-27 #cm2 g s-1
+h =6.6261* 1.e-27 #cm2 g s-1 , planck constant
 hbar = h/(2* np.pi)
-e = 4.8e-10 # statC
-alpha_f = e**2/(hbar *c0) # fine structure constant
+eStatC = 4.8e-10 # statC
+alpha_f = eStatC**2/(hbar *c0) # fine structure constant
 lambda_C = h /(m_e *c0) # Compton wavelength	
 
 def beta(gamma):
