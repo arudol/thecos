@@ -73,17 +73,11 @@ class ChangCooper(object):
         
         self.Theta_e = Theta_e
         self._n_e = n_e
-        self._N = N
+        self._N_internal_units = N
 
         self._grid = grid
         self._n_grid_points = len(grid)
-        self._dispersion_term = np.zeros(len(grid)-1)
-        self._dispersion_term_kompaneets = np.zeros(len(grid)-1)
-        self._heating_term = np.zeros(len(grid)-1)
-        self._heating_term_kompaneets = np.zeros(len(grid)-1)
-        self._pre_factor_term_kompaneets = np.ones(len(grid))
-        self._escape_grid = np.zeros(len(grid))
-        self._source_grid = np.zeros(len(grid))
+
         self.CN_solver = CN_solver
         self._delta_t = delta_t
         self._iterations = 0
@@ -92,20 +86,19 @@ class ChangCooper(object):
         # first build the grid which is independent of the scheme
         self._build_grid()
 
+        #set up and clear arrays
+        self.clear_arrays()
         if initial_distribution is None:
-
             # initalize the grid of electrons
             self._n_current = np.zeros(self._n_grid_points)
             self._initial_distribution = np.zeros(n_grid_points)
 
         else:
-
             assert len(initial_distribution) == self._n_grid_points
-
             self._n_current = np.array(initial_distribution)
             self._initial_distribution = initial_distribution
 
-        # compute the delta_js which control the upwind and downwind scheme
+        # Pre-set the delta_j to 1/2
         self._delta_j_onehalf()
 
         # now compute the tridiagonal terms
@@ -123,12 +116,12 @@ class ChangCooper(object):
         self._grid2 = self._grid ** 2
         self._half_grid2 = self._half_grid ** 2
 
-    def set_N_internal(self):
+    def set_N_internal_units(self):
         """
         Set the solver-internal total number N from the real N (includes correction for pre-factors)
 
         """
-        self._N = self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
+        self._N_internal_units = self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
 
     def find_C_equilibrium_solution(self):
         """
@@ -138,24 +131,24 @@ class ChangCooper(object):
 
         """
 
-        self.set_N_internal()
+        self.set_N_internal_units()
 
         #prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
         prefactor = 8 * np.pi
 
-        last_guess = self.Theta_e**3 *  prefactor/self._N
+        last_guess = self.Theta_e**3 *  prefactor/self._N_internal_units
 
         #def sum_n(x, N):
         #    return sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
         quad_c = -1/(2**3)
         quad_b = -1
-        quad_a = self._N / self.Theta_e**3 /  prefactor
+        quad_a = self._N_internal_units / self.Theta_e**3 /  prefactor
 
         current_guess =  (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
         mp.dps = 30; mp.pretty = True
         N = 3
         while np.abs((last_guess-current_guess)/current_guess) > 0.01:
-            f = lambda x: self._N/(prefactor*self.Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
+            f = lambda x: self._N_internal_units/(prefactor*self.Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
             try:
                 next_guess = float(findroot(f, current_guess))
             except ValueError: 
@@ -167,16 +160,16 @@ class ChangCooper(object):
         print(C, N)
         #quad_c = -1/(2**3)
         #quad_b = -1
-        #quad_a = self._N / self.Theta_e**3 /  prefactor
+        #quad_a = self._N_internal_units / self.Theta_e**3 /  prefactor
 
         #first_guess = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
 
-        #f = lambda x: self._N/(prefactor*self.Theta_e**3)*x**6 - \
+        #f = lambda x: self._N_internal_units/(prefactor*self.Theta_e**3)*x**6 - \
         #                   (x**5 + 1/2**3 * x**4 + 1/3**3 *x**3 + 1/ 4**3 *x**2 + 1/ 5**3 *x + 1/6**3 ) 
 
         #mp.dps = 30; mp.pretty = True
 
-        #first_guess = self.Theta_e**3 *  prefactor/self._N
+        #first_guess = self.Theta_e**3 *  prefactor/self._N_internal_units
 
         #try:
             #C = float(findroot(f, first_guess))
@@ -346,7 +339,7 @@ class ChangCooper(object):
 
     def _compute_delta_j(self):
         """
-        old function to compute the delta_js, for a non-Kompaneets kernel.
+        Compute the delta_js as in original CC70, for a non-Kompaneets kernel.
 
         delta_j controls where the differences are computed. If there are no dispersion
         terms, then delta_j is zero
@@ -362,7 +355,7 @@ class ChangCooper(object):
             if self._dispersion_term[j] != 0:
 
                 w = (
-                    self._delta_grid[1:-1][j] * self._heating_term[j]
+                    self._delta_half_grid[1:-1][j] * self._heating_term[j]
                 ) / self._dispersion_term[j]
 
                 # w asymptotically approaches 1/2, but we need to set it manually
@@ -391,9 +384,9 @@ class ChangCooper(object):
 
         self._delta_j = np.zeros(self._n_grid_points - 1)
 
-        dispersion_term  = self._dispersion_term +self._dispersion_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
+        dispersion_term_combined  = self._dispersion_term +self._dispersion_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
 
-        heating_term = self._heating_term + self._heating_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
+        heating_term_combined = self._heating_term + self._heating_term_kompaneets*sigma_t*self._n_e*c0/self._half_grid**2
 
         for j in range(self._n_grid_points - 1):
 
@@ -401,8 +394,8 @@ class ChangCooper(object):
             if dispersion_term[j] != 0:
 
                 w = (
-                    self._delta_half_grid[1:-1][j] * heating_term[j]
-                ) / dispersion_term[j]
+                    self._delta_half_grid[1:-1][j] * heating_term_combined[j]
+                ) / dispersion_term_combined[j]
 
                 # w asymptotically approaches 1/2, but we need to set it manually
                 if w == 0:
@@ -551,6 +544,7 @@ class ChangCooper(object):
             one_minus_delta_j_minus_one=self._one_minus_delta_j[-1],
             delta_j=0,
         )
+
         b[-1] = 0
 
         # n_j+1 term
@@ -664,7 +658,7 @@ class ChangCooper(object):
             a = self._tridiagonal_solver._a
             b = self._tridiagonal_solver._b
             c = self._tridiagonal_solver._c
-            for k in range(self._n_grid_points - 2, 1, -1):
+            for k in range(self._n_grid_points-2, 1, -1):
                 d[k] += self._n_current[k] -a[k]*self._n_current[k-1] -b[k]*self._n_current[k]-c[k]*self._n_current[k+1]
             d[0] += self._n_current[0]  -b[0]*self._n_current[0] -c[0]*self._n_current[1]
             d[-1] += self._n_current[-1] -a[-1]*self._n_current[-2] -b[-1]*self._n_current[-1]
@@ -677,7 +671,7 @@ class ChangCooper(object):
 
         self._iteratate()
 
-    def clean_terms(self):
+    def clear_arrays(self):
         """
         Clean the internal arrays of the PDE.
 

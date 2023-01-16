@@ -57,7 +57,7 @@ class SimulationManager(object):
 		self.CN_solver = CN_solver # Crank Nicolson solver: bool for on (True) and off (False)
 		self.pl_decay = 2.
 
-		# counters for the solver
+		# settings for the solver
 		self.time = 0
 		self.n_iterations = 0
 		self.include_kompaneets = include_kompaneets # Use the Kompaneets Kernel. Bool
@@ -106,10 +106,10 @@ class SimulationManager(object):
 				print("Initial photon array has incorrect length, setting zero")
 				self.photonarray = np.zeros(self.BIN_X)
 
-		self.ccsolver = ChangCooper(self.energygrid, self.delta_t, self.photonarray, 
+		self._ccsolver = ChangCooper(self.energygrid, self.delta_t, self.photonarray, 
 			Theta_e = self.T, n_e = self.n_e, N = self.N, type_grid = self.type_grid, CN_solver = self.CN_solver)
 
-		self.half_grid = self.ccsolver.half_grid
+		self.half_grid = self._ccsolver.half_grid
 
 	def compute_E_total(self):
 	## Compute the total energy in the photon field ##
@@ -134,59 +134,69 @@ class SimulationManager(object):
 	def evolve_one_timestep(self):
 	## Evolve the photon distribution for one timestep ## 
 
-
 		#Compute total energy and photon number
 		self.compute_E_total()
 		self.compute_N_total()
 
 		#Clean all solver internal heating, dispersion, source and escape terms
-		self.ccsolver.clean_terms()
+		self._ccsolver.clear_arrays()
+		self.clear_arrays_for_PDE()
+		self.clear_arrays_modules()
 
 		# Iterate through all modules and add make them add terms to the source/escape/heating/dispersion arrays
 		for mod in self.modules:
 			mod.calculate_and_pass_coefficents()
 
 		# Update the quantities in the solver
-		self.ccsolver.Theta_e = self.T
-		self.ccsolver.n_e = self.n_e
-		self.ccsolver.delta_t = self.delta_t
-		self.ccsolver.N = self.N
+		self._ccsolver.Theta_e = self.T
+		self._ccsolver.n_e = self.n_e
+		self._ccsolver.delta_t = self.delta_t
+		self._ccsolver.N = self.N
 
 		if self.include_kompaneets: 
 			if self.kompaneets_extended_by == 'none':
-				self.ccsolver._construct_terms_kompaneets()
+				self._ccsolver._construct_terms_kompaneets()
 			elif self.kompaneets_extended_by == 'frequency':
-				self.ccsolver._construct_terms_kompaneets_extended_by_nu()
+				self._ccsolver._construct_terms_kompaneets_extended_by_nu()
 			elif self.kompaneets_extended_by == 'momentum':
-				self.ccsolver._construct_terms_kompaneets_extended_by_p()
+				self._ccsolver._construct_terms_kompaneets_extended_by_p()
 
 			if self.compute_delta_j == 'kompaneets':
-				self.ccsolver._compute_delta_j_kompaneets()
+				self._ccsolver._compute_delta_j_kompaneets()
 			elif self.compute_delta_j == 'classic':
-				self.ccsolver._compute_delta_j_mix()
+				self._ccsolver._compute_delta_j_mix()
 
 		else: 
-			self.ccsolver._compute_delta_j()
+			#self._ccsolver._compute_delta_j()
+			self._ccsolver._delta_j_onehalf()
 
 		# pass the cooling etc terms to the solver
-		self.ccsolver.add_source_terms(self._sourceterms)
-		self.ccsolver.add_escape_terms(self._escapeterms)
-		self.ccsolver.add_heating_terms(self._heatingterms)
-		#self.ccsolver.pass_diffusion_terms(self._dispersionterms)
+		self._ccsolver.add_source_terms(self._sourceterms)
+		self._ccsolver.add_escape_terms(self._escapeterms)
+		self._ccsolver.add_heating_terms(self._heatingterms)
+		#self._ccsolver.pass_diffusion_terms(self._dispersionterms)
 		
 		# let the solver evolve a timestep
-		self.ccsolver.solve_time_step()
+		self._ccsolver.solve_time_step()
 
 		# update the core-internal photon array, and export other terms from the solver for easy readout
-		self.photonarray = self.ccsolver.n
-		self.delta_j = self.ccsolver.delta_j
-		self.time  = self.ccsolver.current_time
-		self.n_iterations = self.ccsolver.n_iterations
+		self.photonarray = self._ccsolver.n
+		self.delta_j = self._ccsolver.delta_j
+		self.time  = self._ccsolver.current_time
+		self.n_iterations = self._ccsolver.n_iterations
 
-		self.heating_term = self.ccsolver._heating_term
-		self.heating_term_kompaneets = self.ccsolver._heating_term_kompaneets
-		self.dispersion_term_kompaneets = self.ccsolver._dispersion_term_kompaneets
-		self.dispersion_term = self.ccsolver._dispersion_term
+		#For external readout: store arrays from solver
+		self.heating_term = self._ccsolver._heating_term
+		self.heating_term_kompaneets = self._ccsolver._heating_term_kompaneets
+		self.dispersion_term_kompaneets = self._ccsolver._dispersion_term_kompaneets
+		self.dispersion_term = self._ccsolver._dispersion_term
+		self.pre_factor_term_kompaneets = self._ccsolver._pre_factor_term_kompaneets
+
+	def clear_arrays_for_PDE(self):
+		self._heatingterms = np.zeros(self.BIN_X-1)
+		self._dispersionterms = np.zeros(self.BIN_X-1)
+		self._sourceterms = np.zeros(self.BIN_X)
+		self._escapeterms = np.zeros(self.BIN_X)
 
 	## the next four are the interface functions for external modules/ passing arrays at runtime
 
@@ -195,6 +205,16 @@ class SimulationManager(object):
 			self._sourceterms += array
 		else:
 			pass
+
+	def clear_arrays_modules(self):
+	## Clear internal arrays of all modules ##
+		for mod in self.modules:
+			mod.clear_arrays()
+
+	def initialise_kernels(self):
+	## Initialise kernels of all modules ##
+		for mod in self.modules:
+			mod.initialise_kernels()
 
 	def add_to_escapeterms(self, array):
 		if len(array == self.BIN_X):
@@ -209,20 +229,10 @@ class SimulationManager(object):
 			pass
 
 	def add_to_dispersionterms(self, array):
-		if len(array == self.BIN_X):
+		if len(array == self.BIN_X-1):
 			self._dispersionterms += array
 		else:
 			pass
-
-	def clear_internal_arrays(self):
-	## Clear internal arrays of all modules ##
-		for mod in self.modules:
-			mod.clear_arrays()
-
-	def initialise_kernels(self):
-	## Initialise kernels of all modules ##
-		for mod in self.modules:
-			mod.initialise_kernels()
 
 
 	# Next two are interfaces to access cooling and injection rates of modules by their name

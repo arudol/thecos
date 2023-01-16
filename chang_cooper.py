@@ -245,6 +245,7 @@ class ChangCooper(object):
             one_minus_delta_j_minus_one=self._one_minus_delta_j[-1],
             delta_j=0,
         )
+        b[-1] = 0
 
         # n_j+1 term
         c[-1] = 0

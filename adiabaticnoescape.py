@@ -1,7 +1,7 @@
 import numpy as np
 from consts import * 
 
-class Adiabatic(object):
+class AdiabaticNoEscape(object):
 
 	def __init__(self, sim):
 		## Initialise , taking an instance of SimulationManager such that energy grids etc are the same
@@ -66,8 +66,6 @@ class Adiabatic(object):
 		"""
 		Fill the arrays with the escape and cooling terms
 		"""
-		for k in range(self._BIN_X):
-			self._escapeterms[k] = self.adiabatic_escape()
 		for k, x in enumerate(self._halfgrid):
 			self._aterms[k] = self.adiabatic_cooling(x)
 

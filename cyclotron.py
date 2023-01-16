@@ -16,7 +16,7 @@ class Cyclotron(object):
 		self._D_X = sim.D_X
 		self._energygrid = sim.energygrid
 
-	def clear_internal_arrays(self):
+	def clear_arrays(self):
 		self._aterms = np.zeros(self._BIN_X)
 		self._sourceterms = np.zeros(self._BIN_X)
 		self._escapeterms = np.zeros(self._BIN_X)
