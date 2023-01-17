@@ -7,14 +7,23 @@ class Cyclotron(object):
 	def __init__(self, sim):
 		## Initialise , taking an instance of SimulationManager such that energy grids etc are the same
 		self.sim = sim
-		self._aterms = np.zeros(sim.BIN_X)
-		self._sourceterms = np.zeros(sim.BIN_X)
-		self._escapeterms = np.zeros(sim.BIN_X)
+		self._BIN_X = sim.grid_parameters['BIN_X']
+		self._X_I = sim.grid_parameters['X_I']
+		self._D_X = sim.grid_parameters['D_X']
+		self._aterms = np.zeros(self._BIN_X-1)
+		self._sourceterms = np.zeros(self._BIN_X)
+		self._escapeterms = np.zeros(self._BIN_X)
 
-		self._BIN_X = sim.BIN_X
-		self._X_I = sim.X_I
-		self._D_X = sim.D_X
 		self._energygrid = sim.energygrid
+
+		if not 'T' in sim.source_parameters:
+			raise Exception('No electron temperature provided, necessary for cyclotron')
+		if not 'n_e' in sim.source_parameters:
+			raise Exception('No electron density provided, necessary for cyclotron')
+		if not 'b_prime' in sim.source_parameters:
+			raise Exception('No magnetic field strength provided, necessary for cyclotron')
+
+		self._source_parameters = sim.source_parameters
 
 	def clear_arrays(self):
 		self._aterms = np.zeros(self._BIN_X)
@@ -25,28 +34,36 @@ class Cyclotron(object):
 	def initialise_kernels(self):
 		pass
 
-	def get_temperature(self):
-		## Get electron temperature from simulation class ## 
-		self._Theta = getattr(self.sim, 'T')
-		self._T = self._Theta * m_e * c0**2 / k_B_erg
+	@property
+	def _Theta(self):
+		"""dimensionless electron temperature """
+		return self._source_parameters['T']
 
-	def get_density(self):
-		## Get matter density from simulation class ## 
-		self._n_e = getattr(self.sim, 'n_e')
+	@property
+	def _T(self):
+		""" electron temperature in Kelvin """
+		return self._source_parameters['T'] * m_e * c0**2 / k_B_erg
 
-	def get_bprime(self):
-		## Get matter density from simulation class ## 
-		self._bprime = getattr(self.sim, 'bprime')
+	@property
+	def _bprime(self):
+		""" Comoving magnetic field """
+		return self._source_parameters['bprime']
+
+	@property
+	def _n_e(self):
+		"""
+		electron number density
+		"""
+		return self._source_parameters["n_e"]
+
+
+	def get_source_parameters(self):
+		""" Get current source parameters """
+		self._source_parameters = getattr(self.sim, 'source_parameters')
 
 	def get_current_photonarray(self):
 		## Get current photon array from simulation class ## 
 		self._photonarray = getattr(self.sim, 'photonarray')
-
-	def calculate_n_photons(self):
-		array_to_integrate = self._energygrid**2 * self._photonarray
-		n_integral = simps(array_to_integrate, self._energygrid)
-		res = 8 * np.pi * (m_e* c0**2)**3 /(h *c0)**3 * n_integral
-		self._N = res
 
 	def get_current_photonnumber(self):
 		## Get current photon N from simulation class ## 
@@ -55,11 +72,10 @@ class Cyclotron(object):
 
 	def calculate_and_pass_coefficents(self):
 	## Calculate all escape and sink terms ##
-		self.get_temperature()
-		self.get_density()
+
 		self.get_current_photonarray()
 		self.get_current_photonnumber()
-		self.get_bprime()
+		self.get_source_parameters()
 		self.calculate_terms()
 
 		self.sim.add_to_escapeterms(self._escapeterms)

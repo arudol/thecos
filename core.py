@@ -33,48 +33,69 @@ class SimulationManager(object):
 ## It reads the config, loads the modules specified in the config and initialises/evolves the run ##
 ## Important: It also holds the data and grid arrays! All modules need to be initialised with it## 
 
-	def __init__(self, BIN_X, X_I, D_X, delta_t, type_grid = 'log', CN_solver = False, include_kompaneets = True, 
-		kompaneets_extended_by = 'none', compute_delta_j = 'kompaneets'):
+	def __init__(self, grid_parameters, delta_t, solver_settings, source_parameters = {}, module_list = []):
 
-		self.BIN_X = BIN_X
-		self.X_I = X_I
-		self.D_X = D_X
-		self.delta_t = delta_t
-		if type_grid == 'log':
-			self.energygrid = np.asarray([np.exp((self.X_I + i) * self.D_X) for i in range(self.BIN_X)])
-		else: 
-			self.energygrid = np.asarray([(self.X_I + i) * self.D_X for i in range(self.BIN_X)])
-		#self.energygrid = np.asarray([np.exp( i * self.D_X) for i in range(self.BIN_X)])
+		self.module_list = module_list
+
+		self.grid_parameters = dict()
+		self.grid_parameters['BIN_X'] = grid_parameters['BIN_X']
+		self.grid_parameters['X_I'] = grid_parameters['X_I']
+		self.grid_parameters['D_X'] = grid_parameters['D_X']
+
+		if "type_grid" in grid_parameters:
+			self.grid_parameters['type_grid'] = grid_parameters['type_grid']
+		else:
+			self.grid_parameters['type_grid'] = 'log'
+
+		if self.grid_parameters['type_grid'] == 'log':
+			self.energygrid = np.asarray([np.exp((self.grid_parameters['X_I']  + i) * grid_parameters['D_X']) for i in range(self.grid_parameters['BIN_X'])])
+		elif self.grid_parameters['type_grid'] == 'lin':
+			self.energygrid = np.asarray([(self.grid_parameters['X_I'] + i) * grid_parameters['D_X'] for i in range(self.grid_parameters['BIN_X'])])
+		else : raise TypeError("No valid grid type selected")
+
 		
-		# not elegant right now: properties of the plasma belong to the sim manager
-		self.type_grid = type_grid
-		self.T = 0 # electron temperature
-		self.lorentz = 0 #plasma lorentz factor
-		self.radius = 0 # radius from central engine
-		self.bprime = 0 # comoving magnetic field
+		self.delta_t = delta_t
+
+		self.source_parameters = dict()
+
+		self.source_parameters["T"] = 0 # electron temperature
+		self.source_parameters["n_e"] = 0 
+
 		self.N = 0 # total photon number
-		self.n_e = 0 # electron number density 
-		self.CN_solver = CN_solver # Crank Nicolson solver: bool for on (True) and off (False)
-		self.pl_decay = 2.
+		self.E = 0 # total energy in photons
+
+		for key in source_parameters:
+			self.source_parameters[key] = source_parameters[key]
+
 
 		# settings for the solver
 		self.time = 0
 		self.n_iterations = 0
-		self.include_kompaneets = include_kompaneets # Use the Kompaneets Kernel. Bool
-		self.kompaneets_extended_by = kompaneets_extended_by
-		self.compute_delta_j = compute_delta_j
+
+		self.solver_settings = dict()
+
+		# Pre-define settings
+		self.solver_settings['include_kompaneets'] = True # Use the Kompaneets Kernel. Bool
+		self.solver_settings['kompaneets_extended_by'] = 'none'
+		self.solver_settings['compute_delta_j'] = 'kompaneets'
+		self.solver_settings['CN_solver'] = False
+
+		# Overwrite with initialisation settings
+		for key in solver_settings:
+			self.solver_settings[key] = solver_settings[key]
 
 
 	def initialise_modules(self):
 	## Reads through all the modules specified in the config and adds them to the run ##
 		self.modules = []
-		for i in range(len(config.modules)):
-			single_class = dynamic_imp_2(config.modules[i][0], config.modules[i][1])
+		for i in range(len(self.module_list)):
+			single_class = dynamic_imp_2(self.module_list[i][0], self.module_list[i][1])
 #			from single_module import single_class
 			self.modules.append(single_class(self))
 
 	def reset_modules(self, new_modules_list):
 	## Reads through all the modules specified in the new_modules_list and sets them to the simulation ##
+		self.module_list = new_modules_list
 		self.modules = []
 		for i in range(len(new_modules_list)):
 			single_class = dynamic_imp_2(new_modules_list[i][0], new_modules_list[i][1])
@@ -106,8 +127,8 @@ class SimulationManager(object):
 				print("Initial photon array has incorrect length, setting zero")
 				self.photonarray = np.zeros(self.BIN_X)
 
-		self._ccsolver = ChangCooper(self.energygrid, self.delta_t, self.photonarray, 
-			Theta_e = self.T, n_e = self.n_e, N = self.N, type_grid = self.type_grid, CN_solver = self.CN_solver)
+		self._ccsolver = ChangCooper(self.energygrid, self.source_parameters, self.delta_t, self.photonarray, 
+			N = self.N, type_grid = self.grid_parameters['type_grid'], CN_solver = self.solver_settings['CN_solver'])
 
 		self.half_grid = self._ccsolver.half_grid
 
@@ -148,32 +169,31 @@ class SimulationManager(object):
 			mod.calculate_and_pass_coefficents()
 
 		# Update the quantities in the solver
-		self._ccsolver.Theta_e = self.T
-		self._ccsolver.n_e = self.n_e
-		self._ccsolver.delta_t = self.delta_t
+		self._ccsolver.pass_source_parameters(self.source_parameters)
 		self._ccsolver.N = self.N
 
-		if self.include_kompaneets: 
-			if self.kompaneets_extended_by == 'none':
-				self._ccsolver._construct_terms_kompaneets()
-			elif self.kompaneets_extended_by == 'frequency':
-				self._ccsolver._construct_terms_kompaneets_extended_by_nu()
-			elif self.kompaneets_extended_by == 'momentum':
-				self._ccsolver._construct_terms_kompaneets_extended_by_p()
+		if self.solver_settings['include_kompaneets']: 
+			if self.solver_settings['kompaneets_extended_by'] == 'none':
+				self._ccsolver.construct_terms_kompaneets()
+			elif self.solver_settings['kompaneets_extended_by'] == 'frequency':
+				self._ccsolver.construct_terms_kompaneets_extended_by_nu()
+			elif self.solver_settings['kompaneets_extended_by'] == 'momentum':
+				self._ccsolver.construct_terms_kompaneets_extended_by_p()
 
-			if self.compute_delta_j == 'kompaneets':
-				self._ccsolver._compute_delta_j_kompaneets()
-			elif self.compute_delta_j == 'classic':
-				self._ccsolver._compute_delta_j_mix()
+			if self.solver_settings['compute_delta_j'] == 'kompaneets':
+				self._ccsolver.compute_delta_j_kompaneets()
+			elif self.solver_settings['compute_delta_j'] == 'classic':
+				self._ccsolver.compute_delta_j_mix()
 
 		else: 
 			#self._ccsolver._compute_delta_j()
-			self._ccsolver._delta_j_onehalf()
+			self._ccsolver.delta_j_onehalf()
 
 		# pass the cooling etc terms to the solver
 		self._ccsolver.add_source_terms(self._sourceterms)
 		self._ccsolver.add_escape_terms(self._escapeterms)
 		self._ccsolver.add_heating_terms(self._heatingterms)
+		self._ccsolver._n_current = self.photonarray
 		#self._ccsolver.pass_diffusion_terms(self._dispersionterms)
 		
 		# let the solver evolve a timestep
@@ -186,11 +206,11 @@ class SimulationManager(object):
 		self.n_iterations = self._ccsolver.n_iterations
 
 		#For external readout: store arrays from solver
-		self.heating_term = self._ccsolver._heating_term
-		self.heating_term_kompaneets = self._ccsolver._heating_term_kompaneets
-		self.dispersion_term_kompaneets = self._ccsolver._dispersion_term_kompaneets
-		self.dispersion_term = self._ccsolver._dispersion_term
-		self.pre_factor_term_kompaneets = self._ccsolver._pre_factor_term_kompaneets
+		self.heating_term = self._ccsolver.heating_term
+		self.heating_term_kompaneets = self._ccsolver.heating_term_kompaneets
+		self.dispersion_term_kompaneets = self._ccsolver.dispersion_term_kompaneets
+		self.dispersion_term = self._ccsolver.dispersion_term
+		self.pre_factor_term_kompaneets = self._ccsolver.pre_factor_term_kompaneets
 
 	def clear_arrays_for_PDE(self):
 		self._heatingterms = np.zeros(self.BIN_X-1)
@@ -256,3 +276,8 @@ class SimulationManager(object):
 			if self.modules[i].__class__.__name__ == name_of_class:
 				res = self.modules[i].get_injectionrate()
 		return res
+
+	@property
+	def BIN_X(self):
+		return self.grid_parameters['BIN_X']
+	

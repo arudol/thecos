@@ -6,14 +6,25 @@ class Adiabatic(object):
 	def __init__(self, sim):
 		## Initialise , taking an instance of SimulationManager such that energy grids etc are the same
 		self.sim = sim
-		self._aterms = np.zeros(sim.BIN_X-1)
-		self._sourceterms = np.zeros(sim.BIN_X)
-		self._escapeterms = np.zeros(sim.BIN_X)
 
-		self._BIN_X = sim.BIN_X
-		self._X_I = sim.X_I
-		self._D_X = sim.D_X
+		self._BIN_X = sim.grid_parameters['BIN_X']
+		self._X_I = sim.grid_parameters['X_I']
+		self._D_X = sim.grid_parameters['D_X']
+
+		self._aterms = np.zeros(self._BIN_X-1)
+		self._sourceterms = np.zeros(self._BIN_X)
+		self._escapeterms = np.zeros(self._BIN_X)
+
 		self._energygrid = sim.energygrid
+
+		if not 'lorentz' in sim.source_parameters:
+			raise Exception('No Lorentz factor provided, necessary for adiabatic cooling')
+		if not 'radius' in sim.source_parameters:
+			raise Exception('No radius provided, necessary for adiabatic cooling')
+		if not 'pl_decay' in sim.source_parameters:
+			raise Exception('No scaling of volume provided, necessary for adiabatic cooling')
+
+		self._source_parameters = sim.source_parameters
 
 	def clear_arrays(self):
 		""" Clear all internal arrays"""
@@ -25,20 +36,28 @@ class Adiabatic(object):
 	def initialise_kernels(self):
 		pass
 
-	def get_radius(self):
-		""" Get the current radius"""
-		self._radius = getattr(self.sim, 'radius')
+	@property
+	def _radius(self):
+		""" current radius"""
+		return self._source_parameters['radius']
 
-	def get_lorentz(self):
-		""" Get the Lorentz factor of the plasma """
-		self._lorentz = getattr(self.sim, 'lorentz')
+	@property
+	def _lorentz(self):
+		"""Lorentz factor of the plasma """
+		return self._source_parameters['lorentz']
 
-	def get_powerlaw_densitydecay(self):
+	@property
+	def _PL(self):
 		"""
-		Get power-law index for the density decay
+		power-law index for the density decay
 		"""
-		self._PL= getattr(self.sim, 'pl_decay')
+		return self._source_parameters["pl_decay"]
 
+	def get_source_parameters(self):
+		""" Get current source parameters """
+		self._source_parameters = getattr(self.sim, 'source_parameters')
+
+	
 	def get_halfgrid(self):
 		"""
 		Get the half grid of the energies
@@ -51,9 +70,7 @@ class Adiabatic(object):
 		Fetch current simulation parameters from the parent simulation manager, f
 		ill the internal arrays and pass them to the parent simulation manager.
 		"""
-		self.get_radius()
-		self.get_lorentz()
-		self.get_powerlaw_densitydecay()
+		self.get_source_parameters()
 		self.get_halfgrid()
 
 		self.calculate_terms()
@@ -77,7 +94,7 @@ class Adiabatic(object):
 
 		;returns: t_ad , the adiabatic cooling timescale [s]
 		"""
-		t_ad = self._radius* self._lorentz / (c0 * beta(self._lorentz))/ self._PL
+		t_ad = self._radius/ self._lorentz / (c0 * beta(self._lorentz))/ self._PL
 		return t_ad
 
 	def adiabatic_escape(self):

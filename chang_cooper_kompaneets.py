@@ -51,10 +51,9 @@ class ChangCooper(object):
     def __init__(
         self,
         grid,
+        source_parameters, 
         delta_t=1.0,
         initial_distribution=None, 
-        Theta_e = 0, 
-        n_e = 0, 
         N = 0, 
         type_grid = 'log',
         CN_solver = False, 
@@ -71,10 +70,8 @@ class ChangCooper(object):
         :param CN_solver: Switch to use Crank-Nicolson solver, default is False
         """
         
-        self.Theta_e = Theta_e
-        self._n_e = n_e
-        self._N_internal_units = N
-
+        self._source_parameters = source_parameters
+        self.N = N
         self._grid = grid
         self._n_grid_points = len(grid)
 
@@ -99,10 +96,36 @@ class ChangCooper(object):
             self._initial_distribution = initial_distribution
 
         # Pre-set the delta_j to 1/2
-        self._delta_j_onehalf()
+        self.delta_j_onehalf()
 
         # now compute the tridiagonal terms
         self._setup_vectors()
+
+
+    @property
+    def _N_internal_units(self):
+        """
+        Set the solver-internal total number N from the real N (includes correction for pre-factors)
+
+        """
+        return self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
+
+    @property
+    def _Theta(self):
+        """dimensionless electron temperature """
+        return self._source_parameters['T']
+
+
+    @property
+    def _n_e(self):
+        """
+        electron number density
+        """
+        return self._source_parameters["n_e"]
+
+
+    def pass_source_parameters(self, source_params):
+        self._source_parameters = source_params
 
     def _build_grid(self):
         """
@@ -116,23 +139,14 @@ class ChangCooper(object):
         self._grid2 = self._grid ** 2
         self._half_grid2 = self._half_grid ** 2
 
-    def set_N_internal_units(self):
-        """
-        Set the solver-internal total number N from the real N (includes correction for pre-factors)
 
-        """
-        self._N_internal_units = self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
-
-    def find_C_equilibrium_solution(self):
+    def _find_C_equilibrium_solution(self):
         """
         Calculate the normalisation constant C of the equilibrium function f_e of Chang & Cooper 1970
 
         :returns: C
 
         """
-
-        self.set_N_internal_units()
-
         #prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
         prefactor = 8 * np.pi
 
@@ -178,7 +192,7 @@ class ChangCooper(object):
 
         return C
 
-    def f_e(self, i, C):
+    def _f_e(self, i, C):
         """
         Calculate the equilibrium function f_e of Chang & Cooper 1970
 
@@ -200,7 +214,7 @@ class ChangCooper(object):
 
 
 
-    def _compute_delta_j_kompaneets(self):
+    def compute_delta_j_kompaneets(self):
         """
         Calculate delta_j for the Kompaneets kernel following Chang & Cooper 1970
 
@@ -208,7 +222,7 @@ class ChangCooper(object):
 
         self._delta_j = np.zeros(self._n_grid_points - 1)
 
-        C = self.find_C_equilibrium_solution()
+        C = self._find_C_equilibrium_solution()
         if C==0.0:
             for j in range(self._n_grid_points - 1):
                 self._delta_j[j] = 1/2.
@@ -217,7 +231,7 @@ class ChangCooper(object):
             for j in range(self._n_grid_points - 1):
                 ## solve the quadratic equation that corresponds to zero flux condition
                 try:
-                    fj = self.f_e(j, C)
+                    fj = self._f_e(j, C)
                     fjplusone = self.f_e(j+1, C)
                     quad_c = self.Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
                     quad_b = fj -fjplusone - 2* fjplusone**2 +2*fjplusone*fj
@@ -242,7 +256,7 @@ class ChangCooper(object):
         self._one_minus_delta_j = 1 - self._delta_j
 
 
-    def _delta_j_onehalf(self):
+    def delta_j_onehalf(self):
         """
         Set all delta_j = 1/2
 
@@ -257,7 +271,7 @@ class ChangCooper(object):
         # precompute 1- delta_j
         self._one_minus_delta_j = 1 - self._delta_j
 
-    def _construct_terms_kompaneets(self):
+    def construct_terms_kompaneets(self):
         """
         Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
         """
@@ -284,7 +298,7 @@ class ChangCooper(object):
             self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
 
 
-    def _construct_terms_kompaneets_extended_by_nu(self):
+    def construct_terms_kompaneets_extended_by_nu(self):
         """
         Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
         """
@@ -311,7 +325,7 @@ class ChangCooper(object):
             self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
 
 
-    def _construct_terms_kompaneets_extended_by_p(self):
+    def construct_terms_kompaneets_extended_by_p(self):
         """
         Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
         """
@@ -337,7 +351,7 @@ class ChangCooper(object):
         for j in range(self._n_grid_points):
             self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
 
-    def _compute_delta_j(self):
+    def compute_delta_j(self):
         """
         Compute the delta_js as in original CC70, for a non-Kompaneets kernel.
 
@@ -372,7 +386,7 @@ class ChangCooper(object):
         self._one_minus_delta_j = 1 - self._delta_j
 
 
-    def _compute_delta_j_mix(self):
+    def compute_delta_j_mix(self):
         """
         Compute delta_j in old way, but also accounting for Kompaneets.
 
@@ -638,7 +652,7 @@ class ChangCooper(object):
 
     def solve_time_step(self):
         """
-        Solve for the next time step.
+        Solve for the next time step. Note that computation fo delta_j and the construction of the kompaneets terms need to be done externally!
         """
 
         # set up the right side of the tridiagonal equation.
@@ -669,7 +683,7 @@ class ChangCooper(object):
 
         # bump up the iteration number and the time
 
-        self._iteratate()
+        self._iterate()
 
     def clear_arrays(self):
         """
@@ -684,7 +698,7 @@ class ChangCooper(object):
         self._escape_grid = np.zeros(len(self.grid))
         self._source_grid = np.zeros(len(self.grid))
 
-    def _iteratate(self):
+    def _iterate(self):
         """
         increase the run iterator and the current time
         """
@@ -744,6 +758,26 @@ class ChangCooper(object):
         """
 
         return self._n_current
+
+    @property
+    def heating_term(self):
+        return self._heating_term
+
+    @property
+    def heating_term_kompaneets(self):
+        return self._heating_term_kompaneets
+
+    @property
+    def dispersion_term(self):
+        return self._dispersion_term
+
+    @property
+    def dispersion_term_kompaneets(self):
+        return self._dispersion_term_kompaneets
+
+    @property
+    def pre_factor_term_kompaneets(self):
+        return self._pre_factor_term_kompaneets
 
     def reset(self):
         """
