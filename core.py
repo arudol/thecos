@@ -34,6 +34,17 @@ class SimulationManager(object):
 ## Important: It also holds the data and grid arrays! All modules need to be initialised with it## 
 
 	def __init__(self, grid_parameters, delta_t, solver_settings, source_parameters = {}, module_list = []):
+		"""
+		Initialisation of the run. 
+
+		:param: grid_paramters - dict containing the number of grid points BIN_X, the minimum grid point X_I, grid spacing D_X
+						and type fo grid ('lin' or 'log', default is log)
+		:param: delta_t - timestep in seconds
+		:param: solver settings - dict containing solver settings like whether to include kompaneets kernel, if extended by frequency or momentum, 
+						and if Cranck Nicolson sovler
+		:param: source parameters - dict holding source parameters like electron number density, dimensionless temperature, etc. default is empty.
+		:param: module list - radiation modules to be used. Have to specified by touple (filename, classname)
+		"""
 
 		self.module_list = module_list
 
@@ -176,7 +187,8 @@ class SimulationManager(object):
 		self._ccsolver.add_source_terms(self._source_term)
 		self._ccsolver.add_escape_terms(self._escape_term)
 		self._ccsolver.add_heating_terms(self._heating_term)
-		self._ccsolver._n_current = self._photonarray
+		self._ccsolver.set_internal_photonarray(self.photonarray)
+		self._ccsolver.update_timestep(self.delta_t)
 		#self._ccsolver.pass_diffusion_terms(self._dispersion_term)
 
 		if self.solver_settings['include_kompaneets']: 

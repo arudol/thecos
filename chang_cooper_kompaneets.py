@@ -61,11 +61,10 @@ class ChangCooper(object):
         """
         Generic Chang and Cooper base class for Kompaneets equation.
         :param grid: grid to be used
-        :param delta_t: the time step in the equation
-        :param initial_distribution: an array of an initial electron distribution
-        :param Theta_e : electron temperature
-        :param n_e: electron number density
-        :param N: total number of photons
+        :param source_parameters: source parameters containing the electron number density and dimensionless temperature
+        :param delta_t: the time step in the equation, default is 1
+        :param initial_distribution: an array of an initial electron distribution, default is none
+        :param N: total number of photons, default is 0
         :param type_grid: set to logarithmic ('log') or linear ('lin'), default is 'log'
         :param CN_solver: Switch to use Crank-Nicolson solver, default is False
         """
@@ -111,7 +110,7 @@ class ChangCooper(object):
         return self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
 
     @property
-    def _Theta(self):
+    def _Theta_e(self):
         """dimensionless electron temperature """
         return self._source_parameters['T']
 
@@ -150,19 +149,19 @@ class ChangCooper(object):
         #prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
         prefactor = 8 * np.pi
 
-        last_guess = self.Theta_e**3 *  prefactor/self._N_internal_units
+        last_guess = self._Theta_e**3 *  prefactor/self._N_internal_units
 
         #def sum_n(x, N):
         #    return sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
         quad_c = -1/(2**3)
         quad_b = -1
-        quad_a = self._N_internal_units / self.Theta_e**3 /  prefactor
+        quad_a = self._N_internal_units / self._Theta_e**3 /  prefactor
 
         current_guess =  (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
         mp.dps = 30; mp.pretty = True
         N = 3
         while np.abs((last_guess-current_guess)/current_guess) > 0.01:
-            f = lambda x: self._N_internal_units/(prefactor*self.Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
+            f = lambda x: self._N_internal_units/(prefactor*self._Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
             try:
                 next_guess = float(findroot(f, current_guess))
             except ValueError: 
@@ -174,16 +173,16 @@ class ChangCooper(object):
         print(C, N)
         #quad_c = -1/(2**3)
         #quad_b = -1
-        #quad_a = self._N_internal_units / self.Theta_e**3 /  prefactor
+        #quad_a = self._N_internal_units / self._Theta_e**3 /  prefactor
 
         #first_guess = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
 
-        #f = lambda x: self._N_internal_units/(prefactor*self.Theta_e**3)*x**6 - \
+        #f = lambda x: self._N_internal_units/(prefactor*self._Theta_e**3)*x**6 - \
         #                   (x**5 + 1/2**3 * x**4 + 1/3**3 *x**3 + 1/ 4**3 *x**2 + 1/ 5**3 *x + 1/6**3 ) 
 
         #mp.dps = 30; mp.pretty = True
 
-        #first_guess = self.Theta_e**3 *  prefactor/self._N_internal_units
+        #first_guess = self._Theta_e**3 *  prefactor/self._N_internal_units
 
         #try:
             #C = float(findroot(f, first_guess))
@@ -205,7 +204,7 @@ class ChangCooper(object):
 
         res = 0.0
 
-        lgr = self._grid[i]/self.Theta_e
+        lgr = self._grid[i]/self._Theta_e
         if np.abs(lgr) < 1.e-80: lgr = 1.e-80
         
         res = 1 / (C * np.exp(lgr) -1)
@@ -233,7 +232,7 @@ class ChangCooper(object):
                 try:
                     fj = self._f_e(j, C)
                     fjplusone = self.f_e(j+1, C)
-                    quad_c = self.Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
+                    quad_c = self._Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
                     quad_b = fj -fjplusone - 2* fjplusone**2 +2*fjplusone*fj
                     quad_a = fjplusone**2 + fj**2
                     if quad_a == 0:
@@ -291,7 +290,7 @@ class ChangCooper(object):
             self._heating_term_kompaneets[j] *= self._half_grid[j]**4
             #else: self._heating_term[j] = 0.
 
-            self._dispersion_term_kompaneets[j] = self.Theta_e
+            self._dispersion_term_kompaneets[j] = self._Theta_e
             self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4
 
         for j in range(self._n_grid_points):
@@ -315,11 +314,11 @@ class ChangCooper(object):
                 #only n2 term:
                 #self._heating_term[j] = (1 - self._delta_j[j])*self._n_current[j+1] + self._delta_j[j]*self._n_current[j]
                 #self._heating_term[j] = 1
-            self._heating_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self.Theta_e * self._half_grid[j]**2)
+            self._heating_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self._Theta_e * self._half_grid[j]**2)
             #else: self._heating_term[j] = 0.
 
-            self._dispersion_term_kompaneets[j] = self.Theta_e
-            self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self.Theta_e*self._half_grid[j]**2)
+            self._dispersion_term_kompaneets[j] = self._Theta_e
+            self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 7/10/self._Theta_e*self._half_grid[j]**2)
 
         for j in range(self._n_grid_points):
             self._pre_factor_term_kompaneets[j] = self._n_e * sigma_t *c0/ self.grid[j]**2
@@ -345,7 +344,7 @@ class ChangCooper(object):
             self._heating_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 14/5*self._half_grid[j])
             #else: self._heating_term[j] = 0.
 
-            self._dispersion_term_kompaneets[j] = self.Theta_e
+            self._dispersion_term_kompaneets[j] = self._Theta_e
             self._dispersion_term_kompaneets[j] *= self._half_grid[j]**4* (1 + 14/5*self._half_grid[j])
 
         for j in range(self._n_grid_points):
@@ -649,6 +648,19 @@ class ChangCooper(object):
         :param array: array to be added, length BIN_X-1, defined on half_grid 
         """
         self._diffusion_term += array
+
+    def set_internal_photonarray(self, array):
+        """ Set the _n_current to a given array
+        :param: array of length BIN_X
+        """
+        self._n_current = array
+
+    def update_timestep(self, delta_t):
+        """ update the delta t to given value
+        :param: delta_t [s] new timestep
+        """
+
+        self._delta_t = delta_t
 
     def solve_time_step(self):
         """

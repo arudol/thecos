@@ -20,7 +20,7 @@ class Cyclotron(object):
 			raise Exception('No electron temperature provided, necessary for cyclotron')
 		if not 'n_e' in sim.source_parameters:
 			raise Exception('No electron density provided, necessary for cyclotron')
-		if not 'b_prime' in sim.source_parameters:
+		if not 'bprime' in sim.source_parameters:
 			raise Exception('No magnetic field strength provided, necessary for cyclotron')
 
 		self._source_parameters = sim.source_parameters
