@@ -78,8 +78,8 @@ class Cyclotron(object):
 		self.get_source_parameters()
 		self.calculate_terms()
 
-		self.sim.add_to_escapeterms(self._escapeterms)
-		self.sim.add_to_sourceterms(self._sourceterms)
+		self.sim.add_to_escape_term(self._escapeterms)
+		self.sim.add_to_source_term(self._sourceterms)
 
 
 	def calculate_terms(self):

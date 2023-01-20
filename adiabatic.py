@@ -75,8 +75,8 @@ class Adiabatic(object):
 
 		self.calculate_terms()
 
-		self.sim.add_to_escapeterms(self._escapeterms)
-		self.sim.add_to_heatingterms(self._aterms)
+		self.sim.add_to_escape_term(self._escapeterms)
+		self.sim.add_to_heating_term(self._aterms)
 
 
 	def calculate_terms(self):

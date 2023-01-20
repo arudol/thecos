@@ -10,10 +10,10 @@ class AdiabaticNoEscape(object):
 		self._BIN_X = sim.grid_parameters['BIN_X']
 		self._X_I = sim.grid_parameters['X_I']
 		self._D_X = sim.grid_parameters['D_X']
+
 		self._aterms = np.zeros(self._BIN_X-1)
 		self._sourceterms = np.zeros(self._BIN_X)
 		self._escapeterms = np.zeros(self._BIN_X)
-
 
 		self._energygrid = sim.energygrid
 
@@ -56,6 +56,7 @@ class AdiabaticNoEscape(object):
 	def get_source_parameters(self):
 		""" Get current source parameters """
 		self._source_parameters = getattr(self.sim, 'source_parameters')
+
 	
 	def get_halfgrid(self):
 		"""
@@ -74,14 +75,16 @@ class AdiabaticNoEscape(object):
 
 		self.calculate_terms()
 
-		self.sim.add_to_escapeterms(self._escapeterms)
-		self.sim.add_to_heatingterms(self._aterms)
+		#self.sim.add_to_escape_term(self._escapeterms)
+		self.sim.add_to_heating_term(self._aterms)
 
 
 	def calculate_terms(self):
 		"""
 		Fill the arrays with the escape and cooling terms
 		"""
+		#for k in range(self._BIN_X):
+		#		self._escapeterms[k] = self.adiabatic_escape()
 		for k, x in enumerate(self._halfgrid):
 			self._aterms[k] = self.adiabatic_cooling(x)
 

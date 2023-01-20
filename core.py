@@ -106,11 +106,11 @@ class SimulationManager(object):
 	def initialise_arrays(self):
 	## Sets the photon array and the terms of the arrays holding the terms of the equation to zero##
 
-		self.photonarray = np.zeros(self.BIN_X)
-		self._heatingterms = np.zeros(self.BIN_X-1)
-		self._dispersionterms = np.zeros(self.BIN_X-1)
-		self._sourceterms = np.zeros(self.BIN_X)
-		self._escapeterms = np.zeros(self.BIN_X)
+		self._photonarray = np.zeros(self.BIN_X)
+		self._heating_term = np.zeros(self.BIN_X-1)
+		self._dispersion_term = np.zeros(self.BIN_X-1)
+		self._source_term = np.zeros(self.BIN_X)
+		self._escape_term = np.zeros(self.BIN_X)
 
 	def initialise_run(self, input_array = []): 
 	## Set arrays to zero, add all modules to run, initialise kernels of the modules.##
@@ -122,12 +122,12 @@ class SimulationManager(object):
 
 		if input_array != []: 
 			if len(input_array) == self.BIN_X:
-				self.photonarray = input_array
+				self._photonarray = input_array
 			else:
 				print("Initial photon array has incorrect length, setting zero")
-				self.photonarray = np.zeros(self.BIN_X)
+				self._photonarray = np.zeros(self.BIN_X)
 
-		self._ccsolver = ChangCooper(self.energygrid, self.source_parameters, self.delta_t, self.photonarray, 
+		self._ccsolver = ChangCooper(self.energygrid, self.source_parameters, self.delta_t, self._photonarray, 
 			N = self.N, type_grid = self.grid_parameters['type_grid'], CN_solver = self.solver_settings['CN_solver'])
 
 		self.half_grid = self._ccsolver.half_grid
@@ -136,7 +136,7 @@ class SimulationManager(object):
 	## Compute the total energy in the photon field ##
 		prefactor = 8* np.pi /(c0*h)**3*(m_e*c0**2)**4
 		#self.E = prefactor * trapz(array_to_integrate[::10], self.energygrid[::10])
-		array_to_integrate = self.energygrid *self.energygrid *self.energygrid * self.photonarray
+		array_to_integrate = self.energygrid *self.energygrid *self.energygrid * self._photonarray
 		cspline = CubicSpline(self.energygrid, array_to_integrate)
 		self.E = prefactor *cspline.integrate(min(self.energygrid), max(self.energygrid))
 		#chi2 = chisquare(self.energygrid, array_to_integrate, cspline)
@@ -146,7 +146,7 @@ class SimulationManager(object):
 	## Compute the total number of photons ##
 		prefactor = 8* np.pi /(c0*h)**3*(m_e*c0**2)**3
 		#self.N = prefactor * trapz(array_to_integrate[::10], self.energygrid[::10])
-		array_to_integrate = self.energygrid *self.energygrid * self.photonarray
+		array_to_integrate = self.energygrid *self.energygrid * self._photonarray
 		cspline = CubicSpline(self.energygrid, array_to_integrate)
 		self.N = prefactor *cspline.integrate(min(self.energygrid), max(self.energygrid))
 		#chi2 = chisquare(self.energygrid, array_to_integrate, cspline)
@@ -172,6 +172,13 @@ class SimulationManager(object):
 		self._ccsolver.pass_source_parameters(self.source_parameters)
 		self._ccsolver.N = self.N
 
+		# pass the cooling etc terms to the solver
+		self._ccsolver.add_source_terms(self._source_term)
+		self._ccsolver.add_escape_terms(self._escape_term)
+		self._ccsolver.add_heating_terms(self._heating_term)
+		self._ccsolver._n_current = self._photonarray
+		#self._ccsolver.pass_diffusion_terms(self._dispersion_term)
+
 		if self.solver_settings['include_kompaneets']: 
 			if self.solver_settings['kompaneets_extended_by'] == 'none':
 				self._ccsolver.construct_terms_kompaneets()
@@ -188,19 +195,12 @@ class SimulationManager(object):
 		else: 
 			#self._ccsolver._compute_delta_j()
 			self._ccsolver.delta_j_onehalf()
-
-		# pass the cooling etc terms to the solver
-		self._ccsolver.add_source_terms(self._sourceterms)
-		self._ccsolver.add_escape_terms(self._escapeterms)
-		self._ccsolver.add_heating_terms(self._heatingterms)
-		self._ccsolver._n_current = self.photonarray
-		#self._ccsolver.pass_diffusion_terms(self._dispersionterms)
 		
 		# let the solver evolve a timestep
 		self._ccsolver.solve_time_step()
 
 		# update the core-internal photon array, and export other terms from the solver for easy readout
-		self.photonarray = self._ccsolver.n
+		self._photonarray = self._ccsolver.n
 		self.delta_j = self._ccsolver.delta_j
 		self.time  = self._ccsolver.current_time
 		self.n_iterations = self._ccsolver.n_iterations
@@ -211,18 +211,23 @@ class SimulationManager(object):
 		self.dispersion_term_kompaneets = self._ccsolver.dispersion_term_kompaneets
 		self.dispersion_term = self._ccsolver.dispersion_term
 		self.pre_factor_term_kompaneets = self._ccsolver.pre_factor_term_kompaneets
+		self.escape_term = self._ccsolver.escape_term
+		self.source_term = self._ccsolver.source_term
 
 	def clear_arrays_for_PDE(self):
-		self._heatingterms = np.zeros(self.BIN_X-1)
-		self._dispersionterms = np.zeros(self.BIN_X-1)
-		self._sourceterms = np.zeros(self.BIN_X)
-		self._escapeterms = np.zeros(self.BIN_X)
+		self._heating_term = np.zeros(self.BIN_X-1)
+		self._dispersion_term = np.zeros(self.BIN_X-1)
+		self._source_term = np.zeros(self.BIN_X)
+		self._escape_term = np.zeros(self.BIN_X)
+
+	def set_photonarray(self, array):
+		self._photonarray = array
 
 	## the next four are the interface functions for external modules/ passing arrays at runtime
 
-	def add_to_sourceterms(self, array):
+	def add_to_source_term(self, array):
 		if len(array == self.BIN_X):
-			self._sourceterms += array
+			self._source_term += array
 		else:
 			pass
 
@@ -236,21 +241,21 @@ class SimulationManager(object):
 		for mod in self.modules:
 			mod.initialise_kernels()
 
-	def add_to_escapeterms(self, array):
+	def add_to_escape_term(self, array):
 		if len(array == self.BIN_X):
-			self._escapeterms += array
+			self._escape_term += array
 		else:
 			pass
 
-	def add_to_heatingterms(self, array):
+	def add_to_heating_term(self, array):
 		if len(array == self.BIN_X -1):
-			self._heatingterms += array
+			self._heating_term += array
 		else:
 			pass
 
-	def add_to_dispersionterms(self, array):
+	def add_to_dispersion_term(self, array):
 		if len(array == self.BIN_X-1):
-			self._dispersionterms += array
+			self._dispersion_term += array
 		else:
 			pass
 
@@ -280,4 +285,9 @@ class SimulationManager(object):
 	@property
 	def BIN_X(self):
 		return self.grid_parameters['BIN_X']
+
+
+	@property
+	def photonarray(self):
+		return self._photonarray
 	

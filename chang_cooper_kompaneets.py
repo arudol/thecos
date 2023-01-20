@@ -779,6 +779,14 @@ class ChangCooper(object):
     def pre_factor_term_kompaneets(self):
         return self._pre_factor_term_kompaneets
 
+    @property
+    def escape_term(self):
+        return self._escape_grid
+
+    @property
+    def source_term(self):
+        return self._source_grid
+
     def reset(self):
         """
         reset the solver (_n_current, _iterations, _current_time) to the distribution
