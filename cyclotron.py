@@ -83,10 +83,8 @@ class Cyclotron(object):
 
 
 	def calculate_terms(self):
-		for k in range(self._BIN_X):
-			x = self._energygrid[k]
-			self._escapeterms[k] = self.alpha_cy_Vurm2011(x)
-			self._sourceterms[k] = self.j_cy_Vurm2011(x)
+		self._escapeterms = np.array(list(map(self.alpha_cy_Vurm2011, self._energygrid)))
+		self._sourceterms = np.array(list(map(self.j_cy_Vurm2011, self._energygrid)))
 
 
 	def alpha_cy_Vurm2011(self, x):

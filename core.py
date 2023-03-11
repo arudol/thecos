@@ -3,8 +3,8 @@ import config as config
 from consts import *
 from scipy.integrate import trapz, simps
 from scipy.interpolate import *
-from chang_cooper_kompaneets import ChangCooper
-
+from chang_cooper_kompaneets_w_seminanalytical import ChangCooper
+from copy import deepcopy
 
 # dynamic import 
 def dynamic_imp(name, class_name):
@@ -69,8 +69,9 @@ class SimulationManager(object):
 
 		self.source_parameters = dict()
 
-		self.source_parameters["T"] = 0 # electron temperature
-		self.source_parameters["n_e"] = 0 
+		# Overwrite with initialisation settings
+		for key in source_parameters:
+			self.source_parameters[key] = source_parameters[key]
 
 		self.N = 0 # total photon number
 		self.E = 0 # total energy in photons
@@ -90,6 +91,8 @@ class SimulationManager(object):
 		self.solver_settings['kompaneets_extended_by'] = 'none'
 		self.solver_settings['compute_delta_j'] = 'kompaneets'
 		self.solver_settings['CN_solver'] = False
+		self.solver_settings['solver_type'] = 'matrix'
+
 
 		# Overwrite with initialisation settings
 		for key in solver_settings:
@@ -133,7 +136,7 @@ class SimulationManager(object):
 
 		if input_array != []: 
 			if len(input_array) == self.BIN_X:
-				self._photonarray = input_array
+				self._photonarray = deepcopy(input_array)
 			else:
 				print("Initial photon array has incorrect length, setting zero")
 				self._photonarray = np.zeros(self.BIN_X)
@@ -186,12 +189,19 @@ class SimulationManager(object):
 		# pass the cooling etc terms to the solver
 		self._ccsolver.add_source_terms(self._source_term)
 		self._ccsolver.add_escape_terms(self._escape_term)
-		self._ccsolver.add_heating_terms(self._heating_term)
+		self._ccsolver.add_heating_term(self._heating_term)
+		self._ccsolver.add_heating_term_oneoverx2(self._heating_term_oneoverx2)
 		self._ccsolver.set_internal_photonarray(self.photonarray)
 		self._ccsolver.update_timestep(self.delta_t)
 		#self._ccsolver.pass_diffusion_terms(self._dispersion_term)
 
 		if self.solver_settings['include_kompaneets']: 
+			if self.n_iterations == 0:
+					if not 'T' in self.source_parameters:
+						raise Exception('No electron temperature provided, necessary for Kompaneets Compton scattering')
+					if not 'n_e' in self.source_parameters:
+						raise Exception('No electron number density provided, necessary for Kompaneets Compton scattering')
+
 			if self.solver_settings['kompaneets_extended_by'] == 'none':
 				self._ccsolver.construct_terms_kompaneets()
 			elif self.solver_settings['kompaneets_extended_by'] == 'frequency':
@@ -202,14 +212,15 @@ class SimulationManager(object):
 			if self.solver_settings['compute_delta_j'] == 'kompaneets':
 				self._ccsolver.compute_delta_j_kompaneets()
 			elif self.solver_settings['compute_delta_j'] == 'classic':
-				self._ccsolver.compute_delta_j_mix()
+				self._ccsolver.compute_delta_j_oneoverx2()
 
 		else: 
-			#self._ccsolver._compute_delta_j()
-			self._ccsolver.delta_j_onehalf()
-		
+			self._ccsolver.compute_delta_j()
+			#self._ccsolver.delta_j_onehalf()
+
+		self._ccsolver._compute_boundary()
 		# let the solver evolve a timestep
-		self._ccsolver.solve_time_step()
+		self._ccsolver.solve_time_step(solver = self.solver_settings['solver_type'])
 
 		# update the core-internal photon array, and export other terms from the solver for easy readout
 		self._photonarray = self._ccsolver.n
@@ -228,6 +239,7 @@ class SimulationManager(object):
 
 	def clear_arrays_for_PDE(self):
 		self._heating_term = np.zeros(self.BIN_X-1)
+		self._heating_term_oneoverx2 = np.zeros(self.BIN_X-1)
 		self._dispersion_term = np.zeros(self.BIN_X-1)
 		self._source_term = np.zeros(self.BIN_X)
 		self._escape_term = np.zeros(self.BIN_X)
@@ -262,6 +274,12 @@ class SimulationManager(object):
 	def add_to_heating_term(self, array):
 		if len(array == self.BIN_X -1):
 			self._heating_term += array
+		else:
+			pass
+
+	def add_to_heating_term_oneoverx2(self, array):
+		if len(array == self.BIN_X -1):
+			self._heating_term_oneoverx2 += array
 		else:
 			pass
 

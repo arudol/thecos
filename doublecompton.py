@@ -75,10 +75,13 @@ class DoubleCompton(object):
 
 
 	def calculate_terms(self):
-		for k in range(self._BIN_X):
-			x = self._energygrid[k]
-			self._escapeterms[k] = self.alpha_dc_Vurm2011(x)
-			self._sourceterms[k] = self.j_dc_Vurm2011(x)
+		#for k in range(self._BIN_X):
+		#	x = self._energygrid[k]
+		#	self._escapeterms[k] = self.alpha_dc_Vurm2011(x)
+		#	self._sourceterms[k] = self.j_dc_Vurm2011(x)
+
+		self._escapeterms = np.array(list(map(self.alpha_dc_Vurm2011, self._energygrid)))
+		self._sourceterms = np.array(list(map(self.j_dc_Vurm2011, self._energygrid)))
 
 	def gaunt_theta(self, theta):
 		res = (1+ 13.91*theta + 11.05 * theta**2 + 19.92 * theta**3 )**(-1.)

@@ -74,10 +74,13 @@ class Bremsstrahlung(object):
 		self.sim.add_to_source_term(self._sourceterms)
 
 	def calculate_terms(self):
-		for k in range(self._BIN_X):
-			x = self._energygrid[k]
-			self._escapeterms[k] = self.alpha_freefree_Vurm2011(x)
-			self._sourceterms[k] = self.j_freefree_Vurm2011(x)
+		#for k in range(self._BIN_X):
+		#	x = self._energygrid[k]
+		#	self._escapeterms[k] = self.alpha_freefree_Vurm2011(x)
+		#	self._sourceterms[k] = self.j_freefree_Vurm2011(x)
+
+		self._escapeterms = np.array(list(map(self.alpha_freefree_Vurm2011, self._energygrid)))
+		self._sourceterms = np.array(list(map(self.j_freefree_Vurm2011, self._energygrid)))
 
 	def Theta(self, T):
 	## Return dimensionless photon energy ##

@@ -76,17 +76,19 @@ class Adiabatic(object):
 		self.calculate_terms()
 
 		self.sim.add_to_escape_term(self._escapeterms)
-		self.sim.add_to_heating_term(self._aterms)
+		self.sim.add_to_heating_term_oneoverx2(-self._aterms_oneoverx2)
+		#self.sim.add_to_heating_term(self._aterms)
 
 
 	def calculate_terms(self):
 		"""
 		Fill the arrays with the escape and cooling terms
 		"""
-		for k in range(self._BIN_X):
-			self._escapeterms[k] = self.adiabatic_escape()
-		for k, x in enumerate(self._halfgrid):
-			self._aterms[k] = self.adiabatic_cooling(x)
+		self._escapeterms.fill(self.adiabatic_escape())
+		self._aterms_oneoverx2 = np.array(list(map(self.adiabatic_cooling_oneoverx2, self._halfgrid)))
+
+		#for k, x in enumerate(self._halfgrid):
+	#		self._aterms[k] = self.adiabatic_cooling(x)
 
 	def t_ad(self):
 		"""
@@ -110,7 +112,7 @@ class Adiabatic(object):
 		return 1/self.t_ad()
 
 
-	def adiabatic_cooling(self, x):
+	def adiabatic_cooling_oneoverx2(self, x):
 		""" 
 		Adiabatic cooling timescale for a plasma expanding with velocity :math:'\beta c', at radius :math:'r' and with 
 		Volume evolving as :math:'V \propto r^{s_n}'. 
@@ -122,7 +124,7 @@ class Adiabatic(object):
 		:param: x ,photon dimensionless energy
 		:returns: cooling timescale :math:'a_\mathrm{cool}' [1/s]
 		"""
-		return 1/self.t_ad()/3 * x
+		return 1/self.t_ad()/3 * x**3
 
 
 	def get_injectionrate(self):

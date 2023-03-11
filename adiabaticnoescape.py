@@ -85,8 +85,10 @@ class AdiabaticNoEscape(object):
 		"""
 		#for k in range(self._BIN_X):
 		#		self._escapeterms[k] = self.adiabatic_escape()
-		for k, x in enumerate(self._halfgrid):
-			self._aterms[k] = self.adiabatic_cooling(x)
+		#for k, x in enumerate(self._halfgrid):
+		#	self._aterms[k] = self.adiabatic_cooling(x)
+		self._aterms = np.array(list(map(self.adiabatic_cooling, self._halfgrid)))
+
 
 	def t_ad(self):
 		"""

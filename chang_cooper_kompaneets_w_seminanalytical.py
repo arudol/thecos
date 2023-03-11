@@ -3,6 +3,7 @@ import math
 from tridiagonal_solver import TridiagonalSolver
 from mpmath import *
 from consts import *
+from copy import deepcopy
 from scipy.integrate import trapz, simps
 from scipy.interpolate import CubicSpline
 
@@ -79,6 +80,7 @@ class ChangCooper(object):
         self._iterations = 0
         self._current_time = 0.0
         self.type_grid = type_grid
+        self._CFL = 1.e-4
         # first build the grid which is independent of the scheme
         self._build_grid()
 
@@ -121,7 +123,6 @@ class ChangCooper(object):
         electron number density
         """
         return self._source_parameters["n_e"]
-
 
     def pass_source_parameters(self, source_params):
         self._source_parameters = source_params
@@ -211,32 +212,322 @@ class ChangCooper(object):
 
         return res
 
-    def initialise_splines(self):
+    def _initialise_splines(self):
 
         heating_term_combined = self._heating_term_oneoverx2 + self._heating_term_oneoverx2_kompaneets
 
-        ivA = 1.0/heating_term_combined
-        mivA_ln= np.log(ivA) #mind the minus sign
+        heating_term_combined_spline = CubicSpline(self._half_grid, heating_term_combined)
 
-        self.x_ln
-        self.spline_fn_lnmivA = CubicSpline(x_ln, mivA_ln)
+        self._heating_term_combined_fullgrid = heating_term_combined_spline(self._grid)
 
-    def compute_boundary(self, delta_t):
+        for i in range(len(self._heating_term_combined_fullgrid)):
+            if np.abs(self._heating_term_combined_fullgrid[i] == 0): self._heating_term_combined_fullgrid[i] = 1.e-100
+        ivA = 1.0/self._heating_term_combined_fullgrid
+        #mivA_ln= np.log(ivA) #here defined as POSITIVE A term
+        a = self._escape_grid*self._grid2 * ivA
+        #a_ln = np.log(self._escape_grid*self._grid2 * ivA)
+        #self._spline_fn_lnmivA = CubicSpline(self._grid, mivA_ln)
+        self._spline_fn_mivA = CubicSpline(self._grid, ivA)
+        self._spline_fn_n =CubicSpline(self._grid, self._n_current)
+        #self._spline_fn_lna = CubicSpline(self._grid, a_ln)
+        self._spline_fn_a = CubicSpline(self._grid, a)
+
+        self._spline_fn_q = CubicSpline(self._grid, self._source_grid*self._grid2)
+
+    def _compute_boundary(self):
+        """ Compute the boundary where :math:'\dot(x) \delta T / \delta x >  0.01' , here the cooling
+                term :math:'\dot(x)' is the one in the 1/x2 parenthesis, accounting for Kompaneets and other contributions.
+         """
 
         heating_term_combined = self._heating_term_oneoverx2 + self._heating_term_oneoverx2_kompaneets
+
+        heating_term_combined_spline = CubicSpline(self._half_grid, heating_term_combined)
+
+        heating_term_combined_fullgrid = heating_term_combined_spline(self._grid)
 
         index_shifted_by_one_grid = 3
         i = index_shifted_by_one_grid
 
-        while (100*heating_term_combined[i]<(self._delta_grid[i])/delta_t and i<self._n_grid_points-2):
+        while (heating_term_combined_fullgrid[i]/self._delta_grid[i] * self._delta_t< self._CFL and i<self._n_grid_points-2):
             i+=1
             index_shifted_by_one_grid = i
 
         boundary = min(index_shifted_by_one_grid, self._n_grid_points)
 
-        print(boundary)
+        print("boundary between solvers: ", boundary)
 
         return boundary
+
+
+    def _compute_y(self):
+        """ For each gridpoint, compute the y parameter for the analytical solution. EQ C93 of Gao et al 2017 """
+
+        b_lin = np.zeros(self._n_grid_points)
+        b_lin[0] = 0.0
+
+        for i in range(self._n_grid_points-1):
+            i+=1
+            delta_b = self._rk4_gslspl_b(self._grid[i-1],self._grid[i],10)
+            set_delta_b_min = b_lin[i-1] * 1.0e-15
+
+            delta_b = max(set_delta_b_min, delta_b)
+            b_lin[i] = b_lin[i-1] + delta_b;
+
+            if not (b_lin[i] > b_lin[i-1]):
+                while not (b_lin[i] > b_lin[i-1]):
+                    direction = max(b_lin[i-1]+ 1.0, b_lin[i-1]*1.0) 
+                    nextvalue = float(math.nextafter(b_lin[i-1], direction))
+                    b_lin[i] = nextvalue
+
+        self._spline_fn_ivB = CubicSpline(b_lin, self._grid) # mind the order : (b_lin, x_ln)
+
+        b_max = b_lin[self._n_grid_points-1]
+        x_max = self._grid[self._n_grid_points-1]
+
+        self._y_ln= np.zeros(self._n_grid_points)
+
+        for i in range(self._n_grid_points):
+            self._y_ln[i] = x_max-1.0e-3*(self._delta_grid[i]) # default value set near the right border of x_grid
+
+        for i in range(self._n_grid_points-1):
+            if(b_lin[i]+self._delta_t<b_max):
+                self._y_ln[i] = self._spline_fn_ivB(b_lin[i]+self._delta_t)
+
+
+
+
+    def _rk4_gslspl_b(self, lower, upper, N_INTG): # related to function B(x)
+        """ Helper function to perform the integral over 1/A in the analytical solver for computing y (EQ C93 of Gao et al 2017 )
+                Uses Runge-Kutta 4th order method. """
+
+        x = lower # to avoid touching lower boundary of interpolation.
+        y = 0.0
+
+        diff_x = (upper-lower)/N_INTG
+        x_min = self._grid[0]
+        x_max = self._grid[self._n_grid_points-1]
+
+        for i in range(N_INTG):
+
+            if(x<x_min or x+1.0*diff_x>x_max):
+                pass
+            else:
+                #k1 = diff_x * np.exp(self._spline_fn_lnmivA(x))
+                k1 = diff_x * self._spline_fn_mivA(x)
+                #k2 = diff_x * np.exp(self._spline_fn_lnmivA( x+0.5*diff_x ))
+                k2 = diff_x * self._spline_fn_mivA( x+0.5*diff_x )
+                #k4 = diff_x * np.exp(self._spline_fn_lnmivA( x+1.0*diff_x ))
+                k4 = diff_x * self._spline_fn_mivA( x+1.0*diff_x )
+
+                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
+                x += diff_x
+        return y
+
+
+    def _rk4_gslspl_a(self, lower, upper, N_INTG): # inner integration result, not the exp(\int)
+        """ Helper function to compute the integral over alpha/A  in the analytical solver for EQ C92 in Gao et al 2017. 
+                Uses Runge-Kutta 4th order integration method."""
+
+        if(lower<self._grid[0] or upper>self._grid[self._n_grid_points-1]):
+            print("in _rk4_gslspl_a, ", upper, " > ", self._grid[self._n_grid_points-1])
+            raise Exception("in function _rk4_gslspl_a, integration range out of bound")
+
+        diff_x = (upper-lower)/N_INTG
+
+        x = lower
+        y = 0.0
+
+        for i in range(N_INTG):
+        
+            #k1_lnloss =self._spline_fn_lna(x)
+            #k2_lnloss =self._spline_fn_lna( x+0.5*diff_x)
+            #k4_lnloss =self._spline_fn_lna( x+1.0*diff_x)
+
+            k1_lnloss =self._spline_fn_a(x)
+            k2_lnloss =self._spline_fn_a( x+0.5*diff_x)
+            k4_lnloss =self._spline_fn_a( x+1.0*diff_x)
+
+            if k1_lnloss < -200:
+                k1_loss = 0.0
+            else:
+                #k1_loss = np.exp(k1_lnloss)
+                k1_loss = k1_lnloss
+
+            if k2_lnloss < -200:
+                k2_loss = 0.0
+            else:
+                #k2_loss = np.exp(k2_lnloss)
+                k2_loss = k2_lnloss
+
+            if k4_lnloss < -200:
+                k4_loss = 0.0
+            else:
+                #k4_loss = np.exp(k4_lnloss)
+                k4_loss = k4_lnloss
+
+            k1 = -diff_x * k1_loss
+            k2 = -diff_x * k2_loss
+            k4 = -diff_x * k4_loss
+            y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
+            x += diff_x
+
+        return y
+
+
+    def _rk4_gslspl_q(self, lower, upper, N_INTG_OUTER_PER_BIN):
+        """ Compute the double integral for the analytical solution for EQ C92 in Gao et al 2017. 
+                Uses Runge-Kutta 4th order integration method."""
+
+        if(lower<self._grid[0] or upper>self._grid[self._n_grid_points-1]):
+            raise Exception("in function _rk4_gslspl_q, integration range out of bound")
+
+        if(lower>=upper):
+            raise Exception("in function _rk4_gslspl_q, integration bound lower >= upper occurred ")
+
+        y = 0.0
+
+        #abs_alpha_ivA = np.exp(self._spline_fn_lna(lower))
+        abs_alpha_ivA = self._spline_fn_a(lower)
+
+        I_alpha_ivA = (upper-lower) * abs_alpha_ivA
+
+        if(I_alpha_ivA<1.0e-3):
+            #if alpha is ~ 0.0, inner integral ~ 0.0; perform outer integration only (single layer)
+            #adjusting N_intg_points  
+
+            N_min = 10
+            N_eff = int((upper-lower)/0.1)
+            N_pts = max(N_min, N_eff)
+
+            diff_x = (upper-lower)/N_pts
+            x_prime = lower
+
+            for i in range(N_pts):   
+                k1 = diff_x * self._spline_fn_q(x_prime)
+                k2 = diff_x * self._spline_fn_q(x_prime+0.5*diff_x)
+                k4 = diff_x * self._spline_fn_q( x_prime+1.0*diff_x)
+
+                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
+                x_prime += diff_x
+
+            #y *= np.exp( self._spline_fn_lnmivA(lower))
+            y *= self._spline_fn_mivA(lower)
+        else:
+            #search for effective upper boundary of the integration
+
+            upper_eff = upper
+            set_range = upper-lower
+            N_OUTER_INIT = 10
+            N_INNER_INIT = 10
+
+            diff_x = set_range/N_OUTER_INIT
+
+            if (diff_x/lower < 1.0e-10):
+                print("lower bound = ", lower)
+                print("upper bound = ", upper_eff)
+                raise Exception("in function _rk4_gslspl_q, integration range too narrow")
+
+            stat_reduced_range = False
+
+            while(self._rk4_gslspl_a(lower, lower+diff_x, N_INNER_INIT) < -2.0 ):
+                upper_eff -= 0.5 * set_range
+                set_range = upper_eff - lower
+                diff_x = set_range/N_OUTER_INIT
+                stat_reduced_range = True
+
+            while( self._rk4_gslspl_a(lower, lower+diff_x, N_INNER_INIT) > -0.8 and stat_reduced_range ):
+                upper_eff += 0.5 * set_range
+
+            # adjusting N_intg_points  
+
+            N_min = 10
+            N_eff = int((upper_eff-lower)/0.1)
+            N_pts = max(N_min, N_eff)
+
+            diff_x = (upper_eff-lower)/N_pts
+
+            x_prime = lower
+
+            for i in range(N_pts):
+                k1_lnloss = self._rk4_gslspl_a(lower, x_prime,            N_INNER_INIT)
+                k2_lnloss = self._rk4_gslspl_a(lower, x_prime+0.5*diff_x, N_INNER_INIT)
+                k4_lnloss = self._rk4_gslspl_a(lower, x_prime+1.0*diff_x, N_INNER_INIT)
+
+            if k1_lnloss < -300:
+                k1_loss = 0.0
+            else:
+                k1_loss = np.exp(k1_lnloss)
+
+            if k2_lnloss < -300:
+                k2_loss = 0.0
+            else:
+                k2_loss = np.exp(k2_lnloss)
+
+            if k4_lnloss < -300:
+                k4_loss = 0.0
+            else:
+                k4_loss = np.exp(k4_lnloss)
+
+
+                k1 = diff_x * self._spline_fn_q(x_prime)* k1_loss
+                k2 = diff_x * self._spline_fn_q(x_prime+0.5*diff_x)* k2_loss
+                k4 = diff_x * self._spline_fn_q( x_prime+1.0*diff_x)* k4_loss
+
+                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
+                x_prime += diff_x
+
+            #y *= np.exp(self._spline_fn_lnmivA(lower))
+            y *= self._spline_fn_mivA(lower)
+
+        return y
+
+    def _compute_n1(self):
+        """ Compute the distribution at the next timestep from the analytical solver """
+        self._HighE = np.zeros(self._n_grid_points)
+
+        for i in range(self._n_grid_points-1):
+
+            if( self._y_ln[i]-self._grid[i] < 1.0e-4 ): #use analytical asymptotic solution if energy loss rate is low
+                #effective_duration = alpha[i]*delta_t>1.0e-4? (exp(-alpha[i]*delta_t)-1.0)/alpha[i] : -delta_t;
+                #if self._escape_grid[i]*self._grid2[i]*self._delta_t > 1.e-4:
+                #    effective_duration = (np.exp(-self._escape_grid[i]*self._grid2[i]*self._delta_t)-1.0)/self._escape_grid[i]*self._grid2[i]
+
+                if self._escape_grid[i]*self._delta_t > 1.e-4:
+                    effective_duration = (np.exp(-self._escape_grid[i]*self._delta_t)-1.0)/self._escape_grid[i]
+
+                else: 
+                    effective_duration = -self._delta_t
+
+                #self._HighE[i] = self._n_current[i] * np.exp(-self._escape_grid[i]*self._grid2[i]*self._delta_t) - self._source_grid[i]*self._grid2[i] * effective_duration
+                self._HighE[i] = self._n_current[i] * np.exp(-self._escape_grid[i]*self._delta_t) - self._source_grid[i]* effective_duration
+                print('simple analytical solver at gridpoint ', i)
+            else: #// numerical integration
+                ny = self._spline_fn_n(self._y_ln[i])
+
+                #ivAx = -np.exp(self.spline_fn_lnmivA(self._grid[i]))
+                ivAx = -self._spline_fn_mivA(self._grid[i])
+
+                #ivAy = -np.exp(self.spline_fn_lnmivA(self._y_ln[i]))
+                ivAy = -self._spline_fn_mivA(self._y_ln[i])
+
+                Aratio = ivAx/ivAy;
+
+                lnloss = self._rk4_gslspl_a(self._grid[i],self._y_ln[i],20)
+
+                if lnloss < -100:
+                    loss = 0.0
+                else:
+                    loss = np.exp(lnloss)
+
+                outer_intg_points_per_bin = 2.0
+
+                injection = self._rk4_gslspl_q(self._grid[i], self._y_ln[i], outer_intg_points_per_bin)
+
+                self._HighE[i] = ny * Aratio * loss + injection
+        
+        self._HighE[self._n_grid_points-1] = 0.0 # fix the boundary condition
+
+
 
     def compute_delta_j_kompaneets(self):
         """
@@ -256,7 +547,7 @@ class ChangCooper(object):
                 ## solve the quadratic equation that corresponds to zero flux condition
                 try:
                     fj = self._f_e(j, C)
-                    fjplusone = self.f_e(j+1, C)
+                    fjplusone = self._f_e(j+1, C)
                     quad_c = self._Theta_e/self._delta_half_grid[j]*(fjplusone - fj) + fjplusone + fjplusone**2
                     quad_b = fj -fjplusone - 2* fjplusone**2 +2*fjplusone*fj
                     quad_a = fjplusone**2 + fj**2
@@ -620,14 +911,8 @@ class ChangCooper(object):
         b = (1 - b * self._delta_t) + self._escape_grid * self._delta_t
         c *= -self._delta_t
 
-        if self.CN_solver: 
-            a /= 2.
-            b = (b-1)/2. +1
-            c /= 2.
-
+        return a,b,c
         # now make a tridiagonal_solver for these terms
-
-        self._tridiagonal_solver = TridiagonalSolver(a, b, c)
 
     def add_source_terms(self, array):
         """Add an array to the source terms of the differential equation
@@ -678,7 +963,7 @@ class ChangCooper(object):
 
         self._delta_t = delta_t
 
-    def solve_time_step(self):
+    def solve_time_step(self, solver = 'matrix'):
         """
         Solve for the next time step. Note that computation fo delta_j and the construction of the kompaneets terms need to be done externally!
         """
@@ -690,24 +975,52 @@ class ChangCooper(object):
         #self._compute_delta_j_kompaneets()
         #self._delta_j_onehalf()
         #self._construct_terms_kompaneets()
-        self._setup_vectors()
+        a,b, c = self._setup_vectors()
 
 
         d = self._n_current + self._source_grid * self._delta_t
 
         # Calculate the terms for the Crank-Nicolson solver, see Park & Petrosian for details
         if self.CN_solver: 
-            a = self._tridiagonal_solver._a
-            b = self._tridiagonal_solver._b
-            c = self._tridiagonal_solver._c
+            a /= 2.
+            b = (b-1)/2. +1
+            c /= 2.
             for k in range(self._n_grid_points-2, 1, -1):
                 d[k] += self._n_current[k] -a[k]*self._n_current[k-1] -b[k]*self._n_current[k]-c[k]*self._n_current[k+1]
             d[0] += self._n_current[0]  -b[0]*self._n_current[0] -c[0]*self._n_current[1]
             d[-1] += self._n_current[-1] -a[-1]*self._n_current[-2] -b[-1]*self._n_current[-1]
         # set the new solution to the current one
 
-        self._n_current = self._tridiagonal_solver.solve(d)
+        if solver == 'matrix':
+            self._tridiagonal_solver = TridiagonalSolver(a, b, c)
+            self._n_current = self._tridiagonal_solver.solve(d)
+        elif solver == 'hybrid':
+            self._initialise_splines()
+            boundary = self._compute_boundary()
 
+            self._compute_y()
+            self._compute_n1()
+
+            d[boundary -2 ] += self._heating_term_combined_fullgrid[boundary-1]/self._grid[boundary-1]**2 * self._HighE[boundary-1] / self._delta_grid[boundary-1] * self._delta_t
+
+            self._tridiagonal_solver = TridiagonalSolver(a[:boundary-2], b[:boundary-2], c[:boundary-2])
+            lowE = self._tridiagonal_solver.solve(d[:boundary-2])
+
+            for i in range(self._n_grid_points):
+                if i < boundary-2 :
+                    self._n_current[i] = lowE[i]
+                else:
+                    self._n_current[i] = self._HighE[i]
+        elif solver == 'analytic':
+            
+            self._initialise_splines()
+            boundary = self._compute_boundary()
+
+            self._compute_y()
+            self._compute_n1()
+            self._n_current = deepcopy(self._HighE)
+        else:
+            raise Exception("No valid solver type specified")
 
         # bump up the iteration number and the time
 
