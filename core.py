@@ -89,9 +89,10 @@ class SimulationManager(object):
 		# Pre-define settings
 		self.solver_settings['include_kompaneets'] = True # Use the Kompaneets Kernel. Bool
 		self.solver_settings['kompaneets_extended_by'] = 'none'
-		self.solver_settings['compute_delta_j'] = 'kompaneets'
+		self.solver_settings['compute_delta_j'] = 'classic'
 		self.solver_settings['CN_solver'] = False
 		self.solver_settings['solver_type'] = 'matrix'
+		self.solver_settings['phase_space'] = True
 
 
 		# Overwrite with initialisation settings
@@ -185,12 +186,15 @@ class SimulationManager(object):
 		# Update the quantities in the solver
 		self._ccsolver.pass_source_parameters(self.source_parameters)
 		self._ccsolver.N = self.N
+		self._ccsolver.phase_space = self.solver_settings['phase_space']
+
+		if self.solver_settings['include_kompaneets'] and not self.solver_settings['phase_space']:
+			raise Exception('Kompaneets kernel can only be used if calculations are carried out in phase space!')
 
 		# pass the cooling etc terms to the solver
 		self._ccsolver.add_source_terms(self._source_term)
 		self._ccsolver.add_escape_terms(self._escape_term)
 		self._ccsolver.add_heating_term(self._heating_term)
-		self._ccsolver.add_heating_term_oneoverx2(self._heating_term_oneoverx2)
 		self._ccsolver.set_internal_photonarray(self.photonarray)
 		self._ccsolver.update_timestep(self.delta_t)
 		#self._ccsolver.pass_diffusion_terms(self._dispersion_term)
@@ -209,12 +213,15 @@ class SimulationManager(object):
 			elif self.solver_settings['kompaneets_extended_by'] == 'momentum':
 				self._ccsolver.construct_terms_kompaneets_extended_by_p()
 
+
 			if self.solver_settings['compute_delta_j'] == 'kompaneets':
 				self._ccsolver.compute_delta_j_kompaneets()
 			elif self.solver_settings['compute_delta_j'] == 'classic':
-				self._ccsolver.compute_delta_j_oneoverx2()
+				self._ccsolver.compute_delta_j()
+
 
 		else: 
+			self._ccsolver.set_kompaneets_terms_zero()
 			self._ccsolver.compute_delta_j()
 			#self._ccsolver.delta_j_onehalf()
 
@@ -233,13 +240,12 @@ class SimulationManager(object):
 		self.heating_term_kompaneets = self._ccsolver.heating_term_kompaneets
 		self.dispersion_term_kompaneets = self._ccsolver.dispersion_term_kompaneets
 		self.dispersion_term = self._ccsolver.dispersion_term
-		self.pre_factor_term_kompaneets = self._ccsolver.pre_factor_term_kompaneets
+		self.pre_factor_term = self._ccsolver.pre_factor_term
 		self.escape_term = self._ccsolver.escape_term
 		self.source_term = self._ccsolver.source_term
 
 	def clear_arrays_for_PDE(self):
 		self._heating_term = np.zeros(self.BIN_X-1)
-		self._heating_term_oneoverx2 = np.zeros(self.BIN_X-1)
 		self._dispersion_term = np.zeros(self.BIN_X-1)
 		self._source_term = np.zeros(self.BIN_X)
 		self._escape_term = np.zeros(self.BIN_X)
@@ -274,12 +280,6 @@ class SimulationManager(object):
 	def add_to_heating_term(self, array):
 		if len(array == self.BIN_X -1):
 			self._heating_term += array
-		else:
-			pass
-
-	def add_to_heating_term_oneoverx2(self, array):
-		if len(array == self.BIN_X -1):
-			self._heating_term_oneoverx2 += array
 		else:
 			pass
 

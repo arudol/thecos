@@ -88,7 +88,6 @@ class ChangCooper(object):
             # initalize the grid of electrons
             self._n_current = np.zeros(self._n_grid_points)
             self._initial_distribution = np.zeros(n_grid_points)
-
         else:
             assert len(initial_distribution) == self._n_grid_points
             self._n_current = np.array(initial_distribution)

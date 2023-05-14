@@ -68,7 +68,7 @@ class Adiabatic(object):
 	def calculate_and_pass_coefficents(self):
 		"""
 		Fetch current simulation parameters from the parent simulation manager, f
-		ill the internal arrays and pass them to the parent simulation manager.
+		ill the internal cooling/escape arrays and pass them to the parent simulation manager.
 		"""
 		self.get_source_parameters()
 		self.get_halfgrid()
@@ -76,7 +76,7 @@ class Adiabatic(object):
 		self.calculate_terms()
 
 		self.sim.add_to_escape_term(self._escapeterms)
-		self.sim.add_to_heating_term_oneoverx2(-self._aterms_oneoverx2)
+		self.sim.add_to_heating_term(-self._aterms_momentumspace)
 		#self.sim.add_to_heating_term(self._aterms)
 
 
@@ -85,7 +85,7 @@ class Adiabatic(object):
 		Fill the arrays with the escape and cooling terms
 		"""
 		self._escapeterms.fill(self.adiabatic_escape())
-		self._aterms_oneoverx2 = np.array(list(map(self.adiabatic_cooling_oneoverx2, self._halfgrid)))
+		self._aterms_momentumspace = np.array(list(map(self.adiabatic_cooling_momentumspace, self._halfgrid)))
 
 		#for k, x in enumerate(self._halfgrid):
 	#		self._aterms[k] = self.adiabatic_cooling(x)
@@ -112,7 +112,7 @@ class Adiabatic(object):
 		return 1/self.t_ad()
 
 
-	def adiabatic_cooling_oneoverx2(self, x):
+	def adiabatic_cooling_momentumspace(self, x):
 		""" 
 		Adiabatic cooling timescale for a plasma expanding with velocity :math:'\beta c', at radius :math:'r' and with 
 		Volume evolving as :math:'V \propto r^{s_n}'. 
@@ -124,7 +124,7 @@ class Adiabatic(object):
 		:param: x ,photon dimensionless energy
 		:returns: cooling timescale :math:'a_\mathrm{cool}' [1/s]
 		"""
-		return 1/self.t_ad()/3 * x**3
+		return  x**3/self.t_ad()/3
 
 
 	def get_injectionrate(self):
