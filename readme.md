@@ -16,7 +16,7 @@ $$ \frac{\partial f(x)}{\partial t}  = \frac{1}{x^2}\frac{\partial}{\partial x}\
 
 Here 
 
-$x^4 \sigma_\mathrm{T} n_\mathrm{e} c \left(\theta_e \frac{\partial f(x)}{\partial x} + f(x)^2 + f(x)$ is the *Kompaneets equation* accounting for Compton scatterings with a thermal electron population defined through their number density $n_e$ and dimensionless energy $\theta_e = k_b T_e /m_e c^2$.
+$x^4 \sigma_\mathrm{T} n_\mathrm{e} c \left(\theta_e \frac{\partial f(x)}{\partial x} + f(x)^2 + f(x) \right)$ is the well-known *Kompaneets kernel* accounting for Compton scatterings with a thermal electron population defined through their number density $n_e$ and dimensionless energy $\theta_e = k_b T_e /m_e c^2$.
 
 **Code design**
 
