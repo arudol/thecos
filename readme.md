@@ -6,7 +6,7 @@ THECOS is designed to compute the time evolution of photon spectra from a therma
 
 *Quick start*: No installation is required. After downloading the sources files, open one of the jupyter notebooks contained in examples_and_tests/ to see how it works! 
 
-**Maths principle**
+## Background
 
 To evolve the photon distribution in time, 
 
@@ -22,9 +22,9 @@ The additional termas account for cooling [$a(x)$], source/injection [$\epsilon(
 
 Modules contributing to the cooling/source/sink arrays can be easily be added/removed; The inclusion of the kompaneets kernel is also optional. 
 
-**Code design**
+## Code design
 
-**Extending the code**
+## Extending the code
 Built up modularly, beyond the standard options the code can easily be extended: 
 1. Arbitrary injection/sink terms may be added to the photon PDE simply accessing sim.add_source_terms() 
 2. The solver and simulation may also be used for other particle species, also in energy space.
