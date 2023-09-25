@@ -31,7 +31,7 @@ The software consists of four main blocks:
 
 ## Extending the code
 Built up modularly, the code can easily be extended: 
-1. Arbitrary injection/sink terms may be added during runtime by accessing `sim.add\_source\_terms()` / `sim.add\_escape\_terms()` 
+1. Arbitrary injection/sink terms may be added during runtime by accessing `sim.add_source_terms()` / `sim.add_escape_terms()` 
 2. Similarly, users can define new modules. They should follow the structure laid out in 'dummy.py' in order to use the integration hooks to the simulation manager correctly.
 3. The solver and simulation may also be used for other particle species. If the equation should be treated in energy instead of momentum space, just activate the corresponding flag and the pre-factor $1/x^2 \rightarrow 1$. 
 
