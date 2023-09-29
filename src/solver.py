@@ -8,6 +8,21 @@ from scipy.integrate import trapz, simps
 from scipy.interpolate import CubicSpline
 
 def generate_subgrids_from_nonuniformgrid(grid, type_grid):
+    """
+    Generate sub-grids from a non-uniform grid:
+    The half grid (extended towards lower and higher energies)
+    and the deltas between the grid points for both grid and half grid.
+
+    Args:
+        grid (array, float): Grid to generate the sub-grid from
+        type_grid(str, 'log'/'lin'): Log or linear grid
+
+    Returns:
+        numpy array : input grid
+        numpy array : corresponding half grid (with length -1)
+        numpy array : deltas of the grid
+        numpy array : deltas of the half grid.
+    """
     n_steps = len(grid) 
     half_grid = np.zeros(n_steps - 1)
     delta_half_grid = np.zeros(n_steps+1)
@@ -49,6 +64,12 @@ def generate_subgrids_from_nonuniformgrid(grid, type_grid):
 
 
 class ChangCooper(object):
+    """
+    Class holding the Chang \& Cooper solver methods
+
+    Attributes:
+
+    """
     def __init__(
         self,
         grid,
@@ -60,14 +81,16 @@ class ChangCooper(object):
         CN_solver = False, 
     ):
         """
-        Generic Chang and Cooper base class for Kompaneets equation.
-        :param grid: grid to be used
-        :param source_parameters: source parameters containing the electron number density and dimensionless temperature
-        :param delta_t: the time step in the equation, default is 1
-        :param initial_distribution: an array of an initial electron distribution, default is none
-        :param N: total number of photons, default is 0
-        :param type_grid: set to logarithmic ('log') or linear ('lin'), default is 'log'
-        :param CN_solver: Switch to use Crank-Nicolson solver, default is False
+        Initialialise the Chang Cooper solver
+
+        Args:
+            grid (array): grid to be used
+            source_parameters (dict): Source parameters containing the electron number density and dimensionless temperature
+            delta_t (float): The time step in the equation, default is 1
+            initial distribution (array): Initial photon distribution. Optional, default is none
+            N (float): Total number of photons, default is 0
+            grid_type (str): set to logarithmic ('log') or linear ('lin'), default is 'log'
+            CN_solver (Bool): Switch to use Crank-Nicolson solver, default is False
         """
         
         self._source_parameters = source_parameters
@@ -80,7 +103,6 @@ class ChangCooper(object):
         self._iterations = 0
         self._current_time = 0.0
         self.type_grid = type_grid
-        self._CFL = 1.e-4
         # first build the grid which is independent of the scheme
         self._build_grid()
 
@@ -104,7 +126,7 @@ class ChangCooper(object):
         Set the solver-internal total number N from the real N (includes correction for pre-factors)
 
         """
-        return self.N/ 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
+        return self.N/  (8* np.pi /(c0*h)**3*(m_e*c0**2)**3)
 
     @property
     def _Theta_e(self):
@@ -139,62 +161,44 @@ class ChangCooper(object):
         """
         Calculate the normalisation constant C of the equilibrium function f_e of Chang & Cooper 1970
 
-        :returns: C
-
+        Returns:
+            float: normalisation constant
         """
-        #prefactor = 8 * np.pi /(c0*h)**3*(m_e*c0**2)**3
-        prefactor = 8 * np.pi
+        prefactor = 2
 
         last_guess = self._Theta_e**3 *  prefactor/self._N_internal_units
 
         #def sum_n(x, N):
         #    return sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
-        quad_c = -1/(2**3)
-        quad_b = -1
+        quad_c = -1
+        quad_b = -2**3
         quad_a = self._N_internal_units / self._Theta_e**3 /  prefactor
 
         current_guess =  (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
         mp.dps = 30; mp.pretty = True
         N = 3
         while np.abs((last_guess-current_guess)/current_guess) > 0.01:
-            f = lambda x: self._N_internal_units/(prefactor*self._Theta_e**3)*x**N - sum(x**i/((N+1)-N*i)**3 for i in range(0, N))
+            f = lambda x: self._N_internal_units/(prefactor*self._N_internal_units)*x**N - sum(x**(N-i)/(i**3) for i in range(1, N))
             try:
                 next_guess = float(findroot(f, current_guess))
-            except ValueError: 
-                    return 0.0
+            except ValueError:
+                return 0.0
             last_guess = current_guess
             current_guess = next_guess
             N +=1 
         C = current_guess
-        print(C, N)
-        #quad_c = -1/(2**3)
-        #quad_b = -1
-        #quad_a = self._N_internal_units / self._Theta_e**3 /  prefactor
-
-        #first_guess = (-quad_b + np.sqrt(quad_b**2 - 4 * quad_a * quad_c) )/ (2*quad_a)
-
-        #f = lambda x: self._N_internal_units/(prefactor*self._Theta_e**3)*x**6 - \
-        #                   (x**5 + 1/2**3 * x**4 + 1/3**3 *x**3 + 1/ 4**3 *x**2 + 1/ 5**3 *x + 1/6**3 ) 
-
-        #mp.dps = 30; mp.pretty = True
-
-        #first_guess = self._Theta_e**3 *  prefactor/self._N_internal_units
-
-        #try:
-            #C = float(findroot(f, first_guess))
-        #except ValueError: 
-        #    C = 0.0
-
         return C
 
     def _f_e(self, i, C):
         """
         Calculate the equilibrium function f_e of Chang & Cooper 1970
 
-        :param i: Gridpoint
-        :param C: Normalisation constant
+        Args:
+            i (int): Gridpoint
+            C (float): Normalisation constant
 
-        :returns: f_e (i)
+        Returns:
+            float: f_e (i)
 
         """
 
@@ -206,286 +210,6 @@ class ChangCooper(object):
         res = 1 / (C * np.exp(lgr) -1)
 
         return res
-
-    def _initialise_splines(self):
-
-        heating_term_combined = self._heating_term + self._heating_term_kompaneets
-
-        heating_term_combined_spline = CubicSpline(self._half_grid, heating_term_combined)
-
-        self._heating_term_combined_fullgrid = heating_term_combined_spline(self._grid)
-
-        for i in range(len(self._heating_term_combined_fullgrid)):
-            if np.abs(self._heating_term_combined_fullgrid[i] == 0): self._heating_term_combined_fullgrid[i] = -1.e-100
-
-        ivA = 1.0/self._heating_term_combined_fullgrid
-
-        a = self._escape_grid/self._pre_factor_term * ivA
-        self._spline_fn_mivA = CubicSpline(self._grid, ivA)
-        self._spline_fn_n =CubicSpline(self._grid, self._n_current)
-        self._spline_fn_a = CubicSpline(self._grid, a)
-
-        self._spline_fn_q = CubicSpline(self._grid, self._source_grid/self._pre_factor_term)
-
-    def _compute_boundary(self):
-        """ Compute the boundary where :math:'\dot(x) \delta T / \delta x >  0.01' , here the cooling
-                term :math:'\dot(x)' is the one in the 1/x2 parenthesis, accounting for Kompaneets and other contributions.
-         """
-
-        heating_term_combined = self._heating_term + self._heating_term_kompaneets
-
-        heating_term_combined_spline = CubicSpline(self._half_grid, heating_term_combined)
-
-        heating_term_combined_fullgrid = heating_term_combined_spline(self._grid)
-
-        heating_term_combined_fullgrid *= self._pre_factor_term
-
-        index_shifted_by_one_grid = 3
-        i = index_shifted_by_one_grid
-
-        while (heating_term_combined_fullgrid[i]/self._delta_grid[i] * self._delta_t< self._CFL and i<self._n_grid_points-2):
-            i+=1
-            index_shifted_by_one_grid = i
-
-        boundary = min(index_shifted_by_one_grid, self._n_grid_points)
-
-        return boundary
-
-
-    def _compute_y(self):
-        """ For each gridpoint, compute the y parameter for the analytical solution. EQ C93 of Gao et al 2017 """
-
-        b_lin = np.zeros(self._n_grid_points)
-        b_lin[0] = 0.0
-
-        for i in range(self._n_grid_points-1):
-            i+=1
-            delta_b = self._rk4_gslspl_b(self._grid[i-1],self._grid[i],10)
-            set_delta_b_min = b_lin[i-1] * 1.0e-15
-
-            delta_b = max(set_delta_b_min, delta_b)
-            b_lin[i] = b_lin[i-1] + delta_b;
-
-            if not (b_lin[i] > b_lin[i-1]):
-                while not (b_lin[i] > b_lin[i-1]):
-                    direction = max(b_lin[i-1]+ 1.0, b_lin[i-1]*1.0) 
-                    nextvalue = float(math.nextafter(b_lin[i-1], direction))
-                    b_lin[i] = nextvalue
-
-        self._spline_fn_ivB = CubicSpline(b_lin, self._grid) # mind the order : (b_lin, x_ln)
-
-        b_max = b_lin[self._n_grid_points-1]
-        x_max = self._grid[self._n_grid_points-1]
-
-        self._y_ln= np.zeros(self._n_grid_points)
-
-        for i in range(self._n_grid_points):
-            self._y_ln[i] = x_max-1.0e-3*(self._delta_grid[i]) # default value set near the right border of x_grid
-
-        for i in range(self._n_grid_points-1):
-            if(b_lin[i]+self._delta_t<b_max):
-                self._y_ln[i] = self._spline_fn_ivB(b_lin[i]+self._delta_t)
-
-
-    def _rk4_gslspl_b(self, lower, upper, N_INTG): # related to function B(x)
-        """ Helper function to perform the integral over 1/A in the analytical solver for computing y (EQ C93 of Gao et al 2017 )
-                Uses Runge-Kutta 4th order method. """
-
-        x = lower # to avoid touching lower boundary of interpolation.
-        y = 0.0
-
-        diff_x = (upper-lower)/N_INTG
-        x_min = self._grid[0]
-        x_max = self._grid[self._n_grid_points-1]
-
-        for i in range(N_INTG):
-
-            if(x<x_min or x+1.0*diff_x>x_max):
-                pass
-            else:
-                #k1 = diff_x * np.exp(self._spline_fn_lnmivA(x))
-                k1 = diff_x * self._spline_fn_mivA(x)
-                #k2 = diff_x * np.exp(self._spline_fn_lnmivA( x+0.5*diff_x ))
-                k2 = diff_x * self._spline_fn_mivA( x+0.5*diff_x )
-                #k4 = diff_x * np.exp(self._spline_fn_lnmivA( x+1.0*diff_x ))
-                k4 = diff_x * self._spline_fn_mivA( x+1.0*diff_x )
-
-                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
-                x += diff_x
-        return y
-
-
-    def _rk4_gslspl_a(self, lower, upper, N_INTG): # inner integration result, not the exp(\int)
-        """ Helper function to compute the integral over alpha/A  in the analytical solver for EQ C92 in Gao et al 2017. 
-                Uses Runge-Kutta 4th order integration method."""
-
-        if(lower<self._grid[0] or upper>self._grid[self._n_grid_points-1]):
-            print("in _rk4_gslspl_a, ", upper, " > ", self._grid[self._n_grid_points-1])
-            raise Exception("in function _rk4_gslspl_a, integration range out of bound")
-
-        diff_x = (upper-lower)/N_INTG
-
-        x = lower
-        y = 0.0
-
-        for i in range(N_INTG):
-            k1_lnloss =self._spline_fn_a(x)
-            k2_lnloss =self._spline_fn_a( x+0.5*diff_x)
-            k4_lnloss =self._spline_fn_a( x+1.0*diff_x)
-
-            k1_loss = max(k1_lnloss, 1.e-200)
-            k2_loss = max(k2_lnloss, 1.e-200)
-            k4_loss = max(k4_lnloss, 1.e-200)
-
-            k1 = -diff_x * k1_loss
-            k2 = -diff_x * k2_loss
-            k4 = -diff_x * k4_loss
-            y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
-            x += diff_x
-
-        return y
-
-
-    def _rk4_gslspl_q(self, lower, upper, N_INTG_OUTER_PER_BIN):
-        """ Compute the double integral for the analytical solution for EQ C92 in Gao et al 2017. 
-                Uses Runge-Kutta 4th order integration method."""
-
-        if(lower<self._grid[0] or upper>self._grid[self._n_grid_points-1]):
-            raise Exception("in function _rk4_gslspl_q, integration range out of bound")
-
-        if(lower>=upper):
-            raise Exception("in function _rk4_gslspl_q, integration bound lower >= upper occurred ")
-
-        y = 0.0
-
-        abs_alpha_ivA = self._spline_fn_a(lower)
-
-        I_alpha_ivA = (upper-lower) * abs_alpha_ivA
-
-        if(I_alpha_ivA<1.0e-3):
-            #if alpha is ~ 0.0, inner integral ~ 0.0; perform outer integration only (single layer)
-            #adjusting N_intg_points  
-
-            N_min = 10
-            N_eff = int((upper-lower)/0.1)
-            N_pts = max(N_min, N_eff)
-
-            diff_x = (upper-lower)/N_pts
-            x_prime = lower
-
-            for i in range(N_pts):   
-                k1 = diff_x * self._spline_fn_q(x_prime)
-                k2 = diff_x * self._spline_fn_q(x_prime+0.5*diff_x)
-                k4 = diff_x * self._spline_fn_q( x_prime+1.0*diff_x)
-
-                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
-                x_prime += diff_x
-            y *= self._spline_fn_mivA(lower)
-        else:
-            #search for effective upper boundary of the integration
-
-            upper_eff = upper
-            set_range = upper-lower
-            N_OUTER_INIT = 10
-            N_INNER_INIT = 10
-
-            diff_x = set_range/N_OUTER_INIT
-
-            if (diff_x/lower < 1.0e-10):
-                print("lower bound = ", lower)
-                print("upper bound = ", upper_eff)
-                raise Exception("in function _rk4_gslspl_q, integration range too narrow")
-
-            stat_reduced_range = False
-
-            while(self._rk4_gslspl_a(lower, lower+diff_x, N_INNER_INIT) < -2.0 ):
-                upper_eff -= 0.5 * set_range
-                set_range = upper_eff - lower
-                diff_x = set_range/N_OUTER_INIT
-                stat_reduced_range = True
-
-            while( self._rk4_gslspl_a(lower, lower+diff_x, N_INNER_INIT) > -0.8 and stat_reduced_range ):
-                upper_eff += 0.5 * set_range
-
-            # adjusting N_intg_points  
-
-            N_min = 10
-            N_eff = int((upper_eff-lower)/0.1)
-            N_pts = max(N_min, N_eff)
-
-            diff_x = (upper_eff-lower)/N_pts
-
-            x_prime = lower
-
-            for i in range(N_pts):
-                k1_lnloss = self._rk4_gslspl_a(lower, x_prime,            N_INNER_INIT)
-                k2_lnloss = self._rk4_gslspl_a(lower, x_prime+0.5*diff_x, N_INNER_INIT)
-                k4_lnloss = self._rk4_gslspl_a(lower, x_prime+1.0*diff_x, N_INNER_INIT)
-
-            if k1_lnloss < -300:
-                k1_loss = 0.0
-            else:
-                k1_loss = np.exp(k1_lnloss)
-
-            if k2_lnloss < -300:
-                k2_loss = 0.0
-            else:
-                k2_loss = np.exp(k2_lnloss)
-
-            if k4_lnloss < -300:
-                k4_loss = 0.0
-            else:
-                k4_loss = np.exp(k4_lnloss)
-
-
-                k1 = diff_x * self._spline_fn_q(x_prime)* k1_loss
-                k2 = diff_x * self._spline_fn_q(x_prime+0.5*diff_x)* k2_loss
-                k4 = diff_x * self._spline_fn_q( x_prime+1.0*diff_x)* k4_loss
-
-                y += (1.0/6.0)*(k1+k4)+(2.0/3.0)*k2
-                x_prime += diff_x
-
-            y *= self._spline_fn_mivA(lower)
-
-        return y
-
-    def _compute_n1(self):
-        """ Compute the distribution at the next timestep from the analytical solver """
-        self._HighE = np.zeros(self._n_grid_points)
-
-        for i in range(self._n_grid_points-1):
-
-            if( self._y_ln[i]-self._grid[i] < 1.0e-4 ): #use analytical asymptotic solution if energy loss rate is low
-
-                if self._escape_grid[i]*self._delta_t > 1.e-4:
-                    effective_duration = (np.exp(-self._escape_grid[i]*self._delta_t)-1.0)/self._escape_grid[i]
-
-                else: 
-                    effective_duration = -self._delta_t
-                self._HighE[i] = self._n_current[i] * np.exp(-self._escape_grid[i]*self._delta_t) - self._source_grid[i]* effective_duration
-            else: #// numerical integration
-                ny = self._spline_fn_n(self._y_ln[i])
-                ivAx = -self._spline_fn_mivA(self._grid[i])
-                ivAy = -self._spline_fn_mivA(self._y_ln[i])
-
-                Aratio = ivAx/ivAy;
-
-                lnloss = self._rk4_gslspl_a(self._grid[i],self._y_ln[i],20)
-
-                if lnloss < -100:
-                    loss = 0.0
-                else:
-                    loss = np.exp(lnloss)
-
-                outer_intg_points_per_bin = 2.0
-
-                injection = self._rk4_gslspl_q(self._grid[i], self._y_ln[i], outer_intg_points_per_bin)
-
-                self._HighE[i] = ny * Aratio * loss + injection
-        
-        self._HighE[self._n_grid_points-1] = 0.0 # fix the boundary condition
-
-
 
     def compute_delta_j_kompaneets(self):
         """
@@ -521,7 +245,8 @@ class ChangCooper(object):
                                 self._delta_j[j] = root_2
                         else:
                             self._delta_j[j] = root_1
-                except ZeroDivisionError: self._delta_j[j] = 1/2.
+                except ZeroDivisionError: 
+                    self._delta_j[j] = 1/2.
 
         # precompute 1- delta_j
         self._one_minus_delta_j = 1 - self._delta_j
@@ -557,7 +282,7 @@ class ChangCooper(object):
 
     def construct_terms_kompaneets_extended_by_nu(self):
         """
-        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
+        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation, extended by Frequency
         """
         self._dispersion_term_kompaneets = np.zeros(len(self._grid)-1)
         self._heating_term_kompaneets = np.zeros(len(self._grid)-1)
@@ -573,7 +298,7 @@ class ChangCooper(object):
 
     def construct_terms_kompaneets_extended_by_p(self):
         """
-        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation following Chang & Cooper 1970
+        Constract the dispersion, heating and pre-factor terms of the Kompaneets equation, extended by momentum
         """
         self._dispersion_term_kompaneets = np.zeros(len(self._grid)-1)
         self._heating_term_kompaneets = np.zeros(len(self._grid)-1)
@@ -632,10 +357,29 @@ class ChangCooper(object):
         # precomoute 1- delta_j
         self._one_minus_delta_j = 1 - self._delta_j
 
+    def compute_energy_transfer_kompaneets(self):
+        """ Calculate the energy transfer from the Kompaneets kernel
+
+            Returns:
+                float: Energy transfer 
+        """
+        array_to_integrate = self._grid **3 * self._n_current
+        cspline = CubicSpline(self._grid, array_to_integrate)
+        first_term = 4 * self._Theta_e*cspline.integrate(min(self._grid), max(self._grid))
+
+
+        array_to_integrate = self._grid **4* self._n_current * (self._n_current+1)
+        cspline = CubicSpline(self._grid, array_to_integrate)
+        second_term = - cspline.integrate(min(self._grid), max(self._grid))
+        
+        lambda_c = h/(m_e *c0)
+        res = sigma_t * self._n_e * 8 * np.pi * m_e * c0**3 /lambda_c**3*(first_term +second_term)
+
+        return res
+
     def _setup_vectors(self):
         """
-        from the specified terms in the subclasses, setup the tridiagonal terms
-
+        From the heating, dispersion, escape/sink and source/injection terms, set up the tri-diagonal matrix.
         """
 
         # initialize everything to zero
@@ -802,7 +546,8 @@ class ChangCooper(object):
     def add_source_terms(self, array):
         """Add an array to the source terms of the differential equation
 
-        :param array: array to be added, length BIN_X, defined on grid 
+        Arg:
+            array of floats: array to be added, length BIN_X, defined on grid 
         """
 
         self._source_grid += array
@@ -810,38 +555,44 @@ class ChangCooper(object):
     def add_escape_terms(self, array):
         """Add an array to the escape terms of the differential equation
 
-        :param array: array to be added, length BIN_X, defined on grid 
+        Arg:
+            array of floats: array to be added, length BIN_X, defined on grid 
         """
         self._escape_grid += array
 
     def add_heating_term(self, array):
         """Add an array to the heating terms of the differential equation
 
-        :param array: array to be added, length BIN_X-1, defined on half_grid 
+        Arg:
+            array of floats: array to be added, length BIN_X, defined on half grid 
         """
         self._heating_term += array
 
     def add_diffusion_terms(self, array):
         """Add an array to the diffusion terms of the differential equation
 
-        :param array: array to be added, length BIN_X-1, defined on half_grid 
+        Arg:
+            array of floats: array to be added, length BIN_X, defined on half grid 
         """
         self._diffusion_term += array
 
     def set_internal_photonarray(self, array):
         """ Set the _n_current to a given array
-        :param: array of length BIN_X
+        
+        Arg:
+            array of floats: current photon array of length BIN_X
         """
         self._n_current = deepcopy(array)
 
     def update_timestep(self, delta_t):
         """ update the delta t to given value
-        :param: delta_t [s] new timestep
+        Arg:
+            float: delta_t [s] new timestep
         """
 
         self._delta_t = delta_t
 
-    def solve_time_step(self, solver = 'matrix'):
+    def solve_time_step(self):
         """
         Solve for the next time step. Note that computation of delta_j and the construction of the kompaneets terms need to be done externally!
         """
@@ -869,40 +620,10 @@ class ChangCooper(object):
 
         # compute the next timestep
 
-        if solver == 'matrix':
-            self._tridiagonal_solver = TridiagonalSolver(a, b, c)
-            self._n_current = self._tridiagonal_solver.solve(d)
-
-        elif solver == 'hybrid':
-            self._initialise_splines()
-            boundary = self._compute_boundary()
-
-            self._compute_y()
-            self._compute_n1()
-
-            d[boundary -2 ] += self._heating_term_combined_fullgrid[boundary-1]*self._pre_factor_term[boundary-1] * self._HighE[boundary-1] / self._delta_grid[boundary-1] * self._delta_t
-
-            self._tridiagonal_solver = TridiagonalSolver(a[:boundary-2], b[:boundary-2], c[:boundary-2])
-            lowE = self._tridiagonal_solver.solve(d[:boundary-2])
-
-            for i in range(self._n_grid_points):
-                if i < boundary-2 :
-                    self._n_current[i] = lowE[i]
-                else:
-                    self._n_current[i] = self._HighE[i]
-        elif solver == 'analytic':
-            
-            self._initialise_splines()
-            boundary = self._compute_boundary()
-
-            self._compute_y()
-            self._compute_n1()
-            self._n_current = deepcopy(self._HighE)
-        else:
-            raise Exception("No valid solver type specified")
+        self._tridiagonal_solver = TridiagonalSolver(a, b, c)
+        self._n_current = self._tridiagonal_solver.solve(d)
 
         # bump up the iteration number and the time
-
         self._iterate()
 
     def clear_arrays(self):
@@ -982,30 +703,42 @@ class ChangCooper(object):
 
     @property
     def heating_term(self):
+        """array (float), the heating term of the PDE """
         return self._heating_term
 
     @property
     def heating_term_kompaneets(self):
+        """array (float), he heating term from the Kompaneets kernel of the PDE """
+
         return self._heating_term_kompaneets
 
     @property
     def dispersion_term(self):
+        """array (float), The dispersion term of the PDE """
+
         return self._dispersion_term
 
     @property
     def dispersion_term_kompaneets(self):
+        """array (float), The dispersion term from the Kompaneets kernel of the PDE """
+
         return self._dispersion_term_kompaneets
 
     @property
     def pre_factor_term(self):
+        """ The pre-factor term in front of dispersion and heating terms.
+            Should be 1 for treatment in energy space, 1/x^2 for treatment in momentum space. """
         return self._pre_factor_term
 
     @property
     def escape_term(self):
+        """ array (float), escape term of the equation"""
+
         return self._escape_grid
 
     @property
     def source_term(self):
+        """ array (float), source term of the PDE"""
         return self._source_grid
 
     def reset(self):
@@ -1018,6 +751,8 @@ class ChangCooper(object):
         self._current_time = 0.0
 
 
+
+####### Helper functions not part of the class ##############
 def _compute_n_j_plus_one(
     one_over_delta_grid,
     one_over_delta_grid_bar_forward,
@@ -1028,12 +763,13 @@ def _compute_n_j_plus_one(
     """
     equation for the CC n_j +1 term
 
-    :param one_over_delta_grid: the total change in energy
-    :param one_over_delta_grid_bar_backward: the backward change in energy for the second derivative
-    :param C_forward: the forward dispersion term
-    :param B_forward: the forward heating term
-    :param one_minus_delta_j: 1 - delta_j
-    :param A: the 1/A(x) in front of the kompaneets kernel
+    Args: 
+        one_over_delta_grid (float): the total change in energy
+        one_over_delta_grid_bar_backward (float): the backward change in energy for the second derivative
+        C_forward (float): the forward dispersion term
+        B_forward (float): the forward heating term
+        one_minus_delta_j (float): 1 - delta_j
+        A (float): the 1/A(x) in front of the kompaneets kernel
     """
 
     return (A * one_over_delta_grid* (
@@ -1054,16 +790,17 @@ def _compute_n_j(
     delta_j):
     """
     equation for the CC n_j term
-
-    :param one_over_delta_grid: the total change in energy
-    :param one_over_delta_grid_bar_backward: the backward change in energy for the second derivative
-    :param one_over_delta_grid_bar_forward: the forward change in energy for the second derivative
-    :param C_forward: the forward dispersion term
-    :param C_backward: the backward dispersion term
-    :param B_forward: the forward heating term
-    :param B_backward: the backward heating term
-    :param A: the 1/A(x) in front of dispersion and advection term
-    :param one_minus_delta_j_minus_one: 1 - delta_j-1
+    
+    Args: 
+        one_over_delta_grid (float): the total change in energy
+        one_over_delta_grid_bar_backward (float): the backward change in energy for the second derivative
+        one_over_delta_grid_bar_forward (float): the forward change in energy for the second derivative
+        C_forward (float): the forward dispersion term
+        C_backward (float): the backward dispersion term
+        B_forward (float): the forward heating term
+        B_backward (float): the backward heating term
+        A (float): the 1/A(x) in front of dispersion and advection term
+        one_minus_delta_j_minus_one (float): 1 - delta_j-1
     """
 
     return (- A * one_over_delta_grid* (
@@ -1084,12 +821,13 @@ def _compute_n_j_minus_one_term(
     """
     equation for the CC n_j-1 term
 
-    :param one_over_delta_grid: the total change in energy
-    :param one_over_delta_grid_bar_forward: the forward change in energy for the second derivative
-    :param C_backward: the backward dispersion term
-    :param B_backward: the backward heating term
-    :param one_minus_delta_j: 1 - delta_j
-    :param A: the 1/A(x) in front of the kompaneets kernel
+    Args:
+        one_over_delta_grid (float): the total change in energy
+        one_over_delta_grid_bar_forward (float): the forward change in energy for the second derivative
+        C_backward (float): the backward dispersion term
+        B_backward (float): the backward heating term
+        one_minus_delta_j (float): 1 - delta_j
+        A (float): the 1/A(x) in front of the kompaneets kernel
     """
 
     return (A * one_over_delta_grid* (

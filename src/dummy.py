@@ -6,54 +6,85 @@ class Dummy(object):
 	def __init__(self, sim):
 		## Initialise , taking an instance of SimulationManager such that energy grids etc are the same
 		self.sim = sim
-		self._aterms = np.zeros(sim.BIN_X)
-		self._sourceterms = np.zeros(sim.BIN_X)
-		self._escapeterms = np.zeros(sim.BIN_X)
+		self.clear_internal_arrays()
 
 		self._BIN_X = sim.BIN_X
-		self._D_X = sim.D_X
 		self._energygrid = sim.energygrid
 
 	def clear_internal_arrays(self):
-		self._aterms = np.zeros(self._BIN_X)
+		""" Set all internal arrays to zero 
+
+		THIS IS A PRE-DEFINED HOOK FOR THE SIMULATION MANAGER
+		"""
+
+		self._aterms = np.zeros(self._BIN_X-1)
 		self._sourceterms = np.zeros(self._BIN_X)
 		self._escapeterms = np.zeros(self._BIN_X)
 
 
 	def initialise_kernels(self):
+		""" 
+		Pre-calculate kernals at beginning of a calculation.
+		Note: nothing done here, fill in something if needed
+
+		THIS IS A PRE-DEFINED HOOK FOR THE SIMULATION MANAGER
+		"""
+
 		pass
 
-	def get_temperature(self):
-		## Get electron temperature from simulation class ## 
-		self._T = getattr(self.sim, 'T')
+	## properties such that it is automatically updated when ._source_parameters is updated
+	@property
+	def _Theta(self):
+		"""dimensionless electron temperature """
+		return self._source_parameters['T']
 
-	def get_density(self):
-		## Get matter density from simulation class ## 
-		self._rho = getattr(self.sim, 'rho')
+	def get_source_parameters(self):
+		""" Get current source parameters from self._sim """
+		self._source_parameters = getattr(self._sim, 'source_parameters')
 
 	def get_current_photonarray(self):
-		## Get current photon array from simulation class ## 
-		self._photonarray = getattr(self.sim, 'photonarray')
+		""" Get current photon array from self._sim """
+		self._photonarray = getattr(self._sim, 'photonarray')
 
 
 	def calculate_and_pass_coefficents(self):
-	## Calculate all escape and sink terms ##
-		self.get_temperature()
-		self.get_density()
-		self.get_current_photonarray()
+		"""
+		Calculate and pass terms to the PDE:
+		(1) get the current state from self._sim
+		(2) calculate the escape and source terms
+		(3) add them to the corresponding arrays of self._sim
 
-		#for i in range(len(self._BIN_X)):
-		#	x = self._energygrid[i]
-		#	self._escapeterms[i] = self.alpha_freefree_Vurm2011(x)
-	#		self._sourceterms[i] = self.j_freefree_Vurm2011(x)
+		THIS IS A PRE-DEFINED HOOK FOR THE SIMULATION MANAGER
+		"""
+		self.get_current_photonarray()
+		self.get_source_parameters()
+		self.calculate_terms()
 
 		self.sim.add_to_escapeterms(self._escapeterms)
 		self.sim.add_to_sourceterms(self._sourceterms)
 
+	def calculate_terms(self):
+		"""Calculate the source and escape terms, store them in internal arrays.
+		
+		Note: Set to zero here, fill differently if needed
+		"""
+		self._escapeterms = np.zeros(self._BIN_X)
+		self._sourceterms = np.zeros(self._BIN_X)
+
 	def get_injectionrate(self):
+		"""
+		Get the source terms of this module. 
+
+		THIS IS A PRE-DEFINED HOOK FOR THE SIMULATION MANAGER
+		"""
 		return self._sourceterms
 
 	def get_coolingrate(self):
+		"""
+		Get the cooling time of this module. 
+
+		THIS IS A PRE-DEFINED HOOK FOR THE SIMULATION MANAGER
+		"""
 		return self._escapeterms
 
 
