@@ -85,12 +85,12 @@ class ChangCooper(object):
 
         Args:
             grid (array): grid to be used
-            source_parameters (dict): Source parameters containing the electron number density and dimensionless temperature
+            source_parameters (dict): Source parameters containing the electron number density and dimensionless temperature,
             delta_t (float): The time step in the equation, default is 1
-            initial distribution (array): Initial photon distribution. Optional, default is none
-            N (float): Total number of photons, default is 0
-            grid_type (str): set to logarithmic ('log') or linear ('lin'), default is 'log'
-            CN_solver (Bool): Switch to use Crank-Nicolson solver, default is False
+            initial distribution (array): Initial photon distribution. Optional, default is none.
+            N (float): Total number of photons. Optional, default is 0.
+            grid_type (str): set to logarithmic ('log') or linear ('lin'). Optional, default is 'log'.
+            CN_solver (Bool): Switch to use Crank-Nicolson solver. Optional, default is False.
         """
         
         self._source_parameters = source_parameters

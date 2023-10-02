@@ -40,7 +40,7 @@ class DoubleCompton(object):
 		pass
 
 	@property
-	def _Theta(self):
+	def _theta(self):
 		"""dimensionless electron temperature """
 		return self._source_parameters['T']
 
@@ -111,7 +111,7 @@ class DoubleCompton(object):
 			float: alpha(x) absorption term
 		"""		E = x * m_e*c0**2
 		prefactor = 38.4 * alpha_f / np.pi 
-		res = prefactor *(self._T * k_B_erg/E)**(2) * self._Theta**2 * self.gaunt_theta(self._Theta) * sigma_t * c0 * self._n_e
+		res = prefactor *(self._T * k_B_erg/E)**(2) * self._theta**2 * self.gaunt_theta(self._theta) * sigma_t * c0 * self._n_e
 		return res
 
 	def alpha_dc_Vurm2011(self, x):
@@ -125,7 +125,7 @@ class DoubleCompton(object):
 		"""
 		E = x * m_e*c0**2
 		prefactor = 2 * alpha_f / np.pi**2 * lambda_C**3 *sigma_t *c0
-		res = prefactor *x**(-2) * self._Theta * self.gaunt_theta(self._Theta) * self._n_e * self._N
+		res = prefactor *x**(-2) * self._theta * self.gaunt_theta(self._theta) * self._n_e * self._N
 		return res
 
 	def j_dc_Vurm2011(self, x):
@@ -141,7 +141,7 @@ class DoubleCompton(object):
 		E = x * m_e*c0**2
 		alpha = self.alpha_dc_Vurm2011(x)
 
-		lgr = x/self._Theta
+		lgr = x/self._theta
 		#if np.abs(lgr) < 1.e-80: lgr = 1.e-80
 		B_E =  (np.exp(lgr) -1 )**(-1)
 		res = alpha * B_E

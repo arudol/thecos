@@ -44,7 +44,7 @@ class Cyclotron(object):
 
 	## The next ones are properties such that they are automatically updated when ._source_parameters is updated
 	@property
-	def _Theta(self):
+	def _theta(self):
 		"""dimensionless electron temperature """
 		return self._source_parameters['T']
 
@@ -117,7 +117,7 @@ class Cyclotron(object):
 		E = x * m_e*c0**2
 		E_B = h * eStatC *self._bprime /(2 *np.pi * m_e *c0)
 		prefactor = sigma_t *c0/alpha_f * (E_B /(m_e*c0**2))**(s-1)
-		res = a * prefactor * self._Theta**(q) * x **(-s) *self._n_e
+		res = a * prefactor * self._theta**(q) * x **(-s) *self._n_e
 		return res
 
 	def j_cy_Vurm2011(self, x):
@@ -133,7 +133,7 @@ class Cyclotron(object):
 		E = x * m_e*c0**2
 		alpha = self.alpha_cy_Vurm2011(x)
 
-		lgr = x/self._Theta
+		lgr = x/self._theta
 		#if np.abs(lgr) < 1.e-80: lgr = 1.e-80
 
 		B_E = 2 * E**3 /(h*c0)**2 * (np.exp(lgr) -1 )**(-1)

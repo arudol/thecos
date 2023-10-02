@@ -34,7 +34,7 @@ class Dummy(object):
 
 	## properties such that it is automatically updated when ._source_parameters is updated
 	@property
-	def _Theta(self):
+	def _theta(self):
 		"""dimensionless electron temperature """
 		return self._source_parameters['T']
 
