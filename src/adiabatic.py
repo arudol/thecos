@@ -1,5 +1,22 @@
+ ######################################################################################
+ # This file is part of THECOS (https://github.com/thecos).
+ # Copyright (c) 2023 Annika Rudolph.
+ # 
+ # This program is free software: you can redistribute it and/or modify  
+ # it under the terms of the GNU General Public License as published by  
+ # the Free Software Foundation, version 3.
+ # 
+ # This program is distributed in the hope that it will be useful, but 
+ # WITHOUT ANY WARRANTY; without even the implied warranty of 
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ # General Public License for more details.
+ # You should have received a copy of the GNU General Public License 
+ # along with this program. If not, see <http://www.gnu.org/licenses/>.
+ ######################################################################################
+
+
 import numpy as np
-from consts import * 
+from consts import *
 
 class Adiabatic(object):
 
@@ -67,8 +84,8 @@ class Adiabatic(object):
 
 	def calculate_and_pass_coefficents(self):
 		"""
-		Fetch current simulation parameters from the parent simulation manager, f
-		ill the internal cooling/escape arrays and pass them to the parent simulation manager.
+		Fetch current simulation parameters from the parent simulation manager,
+		fill the internal cooling/escape arrays and pass them to the parent simulation manager.
 		"""
 		self.get_source_parameters()
 		self.get_halfgrid()
@@ -96,7 +113,7 @@ class Adiabatic(object):
 
 		;returns: t_ad , the adiabatic cooling timescale [s]
 		"""
-		t_ad = self._radius/ self._lorentz / (c0 * beta(self._lorentz))/ self._PL
+		t_ad = self._radius/ self._lorentz / (c0 # beta(self._lorentz))/ self._PL
 		return t_ad
 
 	def adiabatic_escape(self):

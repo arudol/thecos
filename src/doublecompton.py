@@ -1,10 +1,26 @@
 import numpy as np
 from consts import * 
 from scipy.integrate import simps
+ ######################################################################################
+ # This file is part of THECOS (https://github.com/thecos).
+ # Copyright (c) 2023 Annika Rudolph.
+ # 
+ # This program is free software: you can redistribute it and/or modify  
+ # it under the terms of the GNU General Public License as published by  
+ # the Free Software Foundation, version 3.
+ # 
+ # This program is distributed in the hope that it will be useful, but 
+ # WITHOUT ANY WARRANTY; without even the implied warranty of 
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ # General Public License for more details.
+ # You should have received a copy of the GNU General Public License 
+ # along with this program. If not, see <http://www.gnu.org/licenses/>.
+ ######################################################################################
 
 class DoubleCompton(object):
 	""" Double Compton class to calculculate the terms entering the PDE deu to cyclotron emission/absorption
-		of a thermal electron population
+		of a thermal electron population. Only attribute is sim, an object of type SimulationManager.
+		Everything else should be handled through interface functions, do not access attributes directly!
 	"""
 	def __init__(self, sim):
 		""" Initialize the class with an instance of SimulationManager sim. 
@@ -109,7 +125,8 @@ class DoubleCompton(object):
 		
 		Returns:
 			float: alpha(x) absorption term
-		"""		E = x * m_e*c0**2
+		"""		
+		E = x * m_e*c0**2
 		prefactor = 38.4 * alpha_f / np.pi 
 		res = prefactor *(self._T * k_B_erg/E)**(2) * self._theta**2 * self.gaunt_theta(self._theta) * sigma_t * c0 * self._n_e
 		return res

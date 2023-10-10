@@ -1,3 +1,22 @@
+ ######################################################################################
+ # This file is part of THECOS (https://github.com/thecos).
+ # Copyright (c) 2023 Annika Rudolph.
+ # It includes some of the functionality of pychangcooper (https://github.com/grburgess/pychangcooper), although significantly altered.
+ # Copyright (c) 2020 J. Michael Burgess.
+ # 
+ # This program is free software: you can redistribute it and/or modify  
+ # it under the terms of the GNU General Public License as published by  
+ # the Free Software Foundation, version 3.
+ # 
+ # This program is distributed in the hope that it will be useful, but 
+ # WITHOUT ANY WARRANTY; without even the implied warranty of 
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ # General Public License for more details.
+ # You should have received a copy of the GNU General Public License 
+ # along with this program. If not, see <http://www.gnu.org/licenses/>.
+ ######################################################################################
+
+
 import numpy as np
 import math
 from tridiagonal_solver import TridiagonalSolver
@@ -7,67 +26,22 @@ from copy import deepcopy
 from scipy.integrate import trapz, simps
 from scipy.interpolate import CubicSpline
 
-def generate_subgrids_from_nonuniformgrid(grid, type_grid):
-    """
-    Generate sub-grids from a non-uniform grid:
-    The half grid (extended towards lower and higher energies)
-    and the deltas between the grid points for both grid and half grid.
-
-    Args:
-        grid (array, float): Grid to generate the sub-grid from
-        type_grid(str, 'log'/'lin'): Log or linear grid
-
-    Returns:
-        numpy array : input grid
-        numpy array : corresponding half grid (with length -1)
-        numpy array : deltas of the grid
-        numpy array : deltas of the half grid.
-    """
-    n_steps = len(grid) 
-    half_grid = np.zeros(n_steps - 1)
-    delta_half_grid = np.zeros(n_steps+1)
-    delta_grid = np.zeros(n_steps)        
-
-    # now build the half grid points
-    for i in range(n_steps-1):
-        half_grid[i] = 0.5 * (grid[i+1] + grid[i])
-
-    # and build the delta_grids
-    # For the delta halfgrid, first fill the parts that truly lie in the array
-    for i in range(n_steps-1):
-        i+=1
-        delta_half_grid[i] = (grid[i] - grid[i-1])
-
-
-    #then add to the boundaries: extend the grid as a ln grid
-
-    if type_grid=='log': 
-        first_step_log = np.log(grid[1]/grid[0])
-        gridminusone = np.exp(np.log(grid[0])- first_step_log)
-        last_step_log = np.log(grid[-1]/grid[-2])
-        gridplusone = np.exp(np.log(grid[-1])+last_step_log)
-    elif type_grid == 'lin':
-        first_step_log = grid[1]- grid[0]
-        gridminusone = grid[0]- first_step_log
-        last_step_log = grid[-1] - grid[-2]
-        gridplusone = grid[-1]+last_step_log
-    
-    delta_half_grid[0] = grid[0] - gridminusone
-    delta_half_grid[-1] = gridplusone - grid[-1]
-
-    # delta grid from delta halfgrid
-
-    for i in range(n_steps):
-        delta_grid[i] = (delta_half_grid[i+1] + delta_half_grid[i])/2.
-
-    return grid, half_grid, delta_grid, delta_half_grid
-
-
 class ChangCooper(object):
     """
     Class holding the Chang \& Cooper solver methods
 
     Attributes:
+        N(float): Total number of photons
+        type_grid (str): linear ("lin") or log-space ("log") grid.
+
+    Properties:
+        heating_term (array, floats) : Total heating/Cooling term of the PDE (from radiation modules).
+        heating_term_kompaneets (array, floats) : Heating/Cooling term from the Kompaneets Kernel.
+        dispersion_term_kompaneets (array, floats) : Dispersion term from the Kompaneets Kernel.
+        dispersion_term(array, floats) : Total dispersion term of the PDE (from radiation modules).
+        pre_factor_term  : Pre-factor term of the Dispersion + Cooling terms. Equals to 1 if treatment is in energy space, 1/energy^2 for treatment in momentum space.
+        escape_term : Total escape/sink term of the PDE (from radiation modules).
+        source_term : Total source/Injection term of the PDE (from radiation modules).
 
     """
     def __init__(
@@ -142,6 +116,12 @@ class ChangCooper(object):
         return self._source_parameters["n_e"]
 
     def pass_source_parameters(self, source_params):
+        """
+        Pass source parameters to internal ones. This is an interface to use from outside. 
+
+        Arg:
+            source_params: New source parameters to be stored internally
+        """
         self._source_parameters = source_params
 
     def _build_grid(self):
@@ -159,7 +139,7 @@ class ChangCooper(object):
 
     def _find_C_equilibrium_solution(self):
         """
-        Calculate the normalisation constant C of the equilibrium function f_e of Chang & Cooper 1970
+        Calculate the normalisation constant C of the equilibrium function f_e of Chang & Cooper 1970. 
 
         Returns:
             float: normalisation constant
@@ -213,7 +193,7 @@ class ChangCooper(object):
 
     def compute_delta_j_kompaneets(self):
         """
-        Calculate delta_j for the Kompaneets kernel following Chang & Cooper 1970
+        Calculate delta_j for the Kompaneets kernel following Chang & Cooper 1970. 
 
         """
 
@@ -544,7 +524,7 @@ class ChangCooper(object):
         # now make a tridiagonal_solver for these terms
 
     def add_source_terms(self, array):
-        """Add an array to the source terms of the differential equation
+        """Add an array to the source terms of the differential equation. This is an interface to use from outside. 
 
         Arg:
             array of floats: array to be added, length BIN_X, defined on grid 
@@ -553,7 +533,7 @@ class ChangCooper(object):
         self._source_grid += array
 
     def add_escape_terms(self, array):
-        """Add an array to the escape terms of the differential equation
+        """Add an array to the escape terms of the differential equation. This is an interface to use from outside. 
 
         Arg:
             array of floats: array to be added, length BIN_X, defined on grid 
@@ -561,7 +541,7 @@ class ChangCooper(object):
         self._escape_grid += array
 
     def add_heating_term(self, array):
-        """Add an array to the heating terms of the differential equation
+        """Add an array to the heating terms of the differential equation. This is an interface to use from outside. 
 
         Arg:
             array of floats: array to be added, length BIN_X, defined on half grid 
@@ -569,7 +549,7 @@ class ChangCooper(object):
         self._heating_term += array
 
     def add_diffusion_terms(self, array):
-        """Add an array to the diffusion terms of the differential equation
+        """Add an array to the diffusion terms of the differential equation. This is an interface to use from outside. 
 
         Arg:
             array of floats: array to be added, length BIN_X, defined on half grid 
@@ -577,15 +557,15 @@ class ChangCooper(object):
         self._diffusion_term += array
 
     def set_internal_photonarray(self, array):
-        """ Set the _n_current to a given array
+        """ Set the _n_current to a given array. This is an interface to use from outside. 
         
         Arg:
             array of floats: current photon array of length BIN_X
         """
         self._n_current = deepcopy(array)
 
-    def update_timestep(self, delta_t):
-        """ update the delta t to given value
+    def update_timestep(self, delta_t):  
+        """ update the delta t to given value. This is an interface to use from outside. 
         Arg:
             float: delta_t [s] new timestep
         """
@@ -628,7 +608,7 @@ class ChangCooper(object):
 
     def clear_arrays(self):
         """
-        Clean the internal arrays of the PDE.
+        Clean the internal arrays of the PDE. This is an interface to use from outside. 
 
         """
         self._dispersion_term = np.zeros(len(self.grid)-1)
@@ -639,7 +619,7 @@ class ChangCooper(object):
         self._escape_grid = np.zeros(len(self.grid))
         self._source_grid = np.zeros(len(self.grid))
 
-    def _iterate(self):
+    def _iterate(self):  
         """
         increase the run iterator and the current time
         """
@@ -653,7 +633,7 @@ class ChangCooper(object):
         self._current_time += self._delta_t
 
     @property
-    def current_time(self):
+    def current_time(self):  
         """
         The current time: delta_t * n_iterations
         """
@@ -661,7 +641,7 @@ class ChangCooper(object):
         return self._current_time
 
     @property
-    def n_iterations(self):
+    def n_iterations(self):  
         """
         The number of iterations solved for
         """
@@ -669,7 +649,7 @@ class ChangCooper(object):
         return self._iterations
 
     @property
-    def delta_j(self):
+    def delta_j(self):  
         """
         the delta_js
         """
@@ -677,7 +657,7 @@ class ChangCooper(object):
         return self._delta_j
 
     @property
-    def grid(self):
+    def grid(self):  
         """
         The energy grid
         """
@@ -685,7 +665,7 @@ class ChangCooper(object):
         return self._grid
 
     @property
-    def half_grid(self):
+    def half_grid(self):  
         """
         The half energy grid
         """
@@ -693,7 +673,7 @@ class ChangCooper(object):
         return self._half_grid
 
     @property
-    def n(self):
+    def n(self):  
         """
         The current solution
         """
@@ -708,7 +688,7 @@ class ChangCooper(object):
 
     @property
     def heating_term_kompaneets(self):
-        """array (float), he heating term from the Kompaneets kernel of the PDE """
+        """array (float), the heating term from the Kompaneets kernel of the PDE """
 
         return self._heating_term_kompaneets
 
@@ -741,9 +721,9 @@ class ChangCooper(object):
         """ array (float), source term of the PDE"""
         return self._source_grid
 
-    def reset(self):
+    def reset(self):  
         """
-        reset the solver (_n_current, _iterations, _current_time) to the distribution
+        reset the solver (_n_current, _iterations, _current_time) to the distribution. This is an interface to use from outside. 
         """
 
         self._n_current = self._initial_distribution
@@ -760,6 +740,7 @@ def _compute_n_j_plus_one(
     B_forward,
     A, 
     one_minus_delta_j):
+     
     """
     equation for the CC n_j +1 term
 
@@ -788,6 +769,7 @@ def _compute_n_j(
     A, 
     one_minus_delta_j_minus_one,
     delta_j):
+     
     """
     equation for the CC n_j term
     
@@ -834,3 +816,59 @@ def _compute_n_j_minus_one_term(
         one_over_delta_grid_bar_backward * C_backward 
         -delta_j_minus_one * B_backward ))
 
+
+
+def generate_subgrids_from_nonuniformgrid(grid, type_grid):
+    """
+    Generate sub-grids from a non-uniform grid:
+    The half grid (extended towards lower and higher energies)
+    and the deltas between the grid points for both grid and half grid.
+
+    Args:
+        grid (array, float): Grid to generate the sub-grid from
+        type_grid(str, 'log'/'lin'): Log or linear grid
+
+    Returns:
+        numpy array : input grid
+        numpy array : corresponding half grid (with length -1)
+        numpy array : deltas of the grid
+        numpy array : deltas of the half grid.
+    """
+    n_steps = len(grid) 
+    half_grid = np.zeros(n_steps - 1)
+    delta_half_grid = np.zeros(n_steps+1)
+    delta_grid = np.zeros(n_steps)        
+
+    # now build the half grid points
+    for i in range(n_steps-1):
+        half_grid[i] = 0.5 * (grid[i+1] + grid[i])
+
+    # and build the delta_grids
+    # For the delta halfgrid, first fill the parts that truly lie in the array
+    for i in range(n_steps-1):
+        i+=1
+        delta_half_grid[i] = (grid[i] - grid[i-1])
+
+
+    #then add to the boundaries: extend the grid as a ln grid
+
+    if type_grid=='log': 
+        first_step_log = np.log(grid[1]/grid[0])
+        gridminusone = np.exp(np.log(grid[0])- first_step_log)
+        last_step_log = np.log(grid[-1]/grid[-2])
+        gridplusone = np.exp(np.log(grid[-1])+last_step_log)
+    elif type_grid == 'lin':
+        first_step_log = grid[1]- grid[0]
+        gridminusone = grid[0]- first_step_log
+        last_step_log = grid[-1] - grid[-2]
+        gridplusone = grid[-1]+last_step_log
+    
+    delta_half_grid[0] = grid[0] - gridminusone
+    delta_half_grid[-1] = gridplusone - grid[-1]
+
+    # delta grid from delta halfgrid
+
+    for i in range(n_steps):
+        delta_grid[i] = (delta_half_grid[i+1] + delta_half_grid[i])/2.
+
+    return grid, half_grid, delta_grid, delta_half_grid

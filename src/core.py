@@ -1,3 +1,20 @@
+ ######################################################################################
+ # This file is part of THECOS (https://github.com/thecos).
+ # Copyright (c) 2023 Annika Rudolph.
+ # 
+ # This program is free software: you can redistribute it and/or modify  
+ # it under the terms of the GNU General Public License as published by  
+ # the Free Software Foundation, version 3.
+ # 
+ # This program is distributed in the hope that it will be useful, but 
+ # WITHOUT ANY WARRANTY; without even the implied warranty of 
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ # General Public License for more details.
+ # You should have received a copy of the GNU General Public License 
+ # along with this program. If not, see <http://www.gnu.org/licenses/>.
+ ######################################################################################
+
+
 import numpy as np
 from consts import *
 from scipy.integrate import trapz, simps
@@ -18,7 +35,6 @@ class SimulationManager(object):
 											the minimum grid point ('X_I', int), 
 											grid spacing ('D_X', int)
 											and type of grid ('type_grid', 'lin'/'log')
-			delta_t (float): Timestep in seconds
 			solver_settings (dict): Solver settings. Containing
 											whether to include kompaneets kernel ('include_kompaneets', Bool), 
 											if extended by something ('kompaneets_extended_by', 'energy'/'momentum'/'none'),
@@ -26,16 +42,52 @@ class SimulationManager(object):
 											if running in phase space ('phase_space', Bool) 
 			source_parameters (dict):  Holding source parameters like electron number density, dimensionless temperature
 			module_list (list): list of all radiation modules to be used, each specified by touple (filename, classname)
+			
 			time (float) : Simulation time in seconds
+			delta_t (float): Timestep in seconds
 			n_iterations (int) : Number of iterations
+			
 			N (float) : Total number of photons
 			E (float) : Total energy of photons
+			energy_change_rate (float): Change of contained energy since last step, calculated as E(last time step) - E(current step)/ delta_t
 			photonarray (array, floats) : Current photonarray
+
+			heating_term (array, floats) : Total heating/Cooling term of the PDE (from radiation modules).
+			heating_term_kompaneets (array, floats) : Heating/Cooling term from the Kompaneets Kernel.
+			dispersion_term_kompaneets (array, floats) : Dispersion term from the Kompaneets Kernel.
+			dispersion_term(array, floats) : Total dispersion term of the PDE (from radiation modules).
+			pre_factor_term  : Pre-factor term of the Dispersion + Cooling terms. Equals to 1 if treatment is in energy space, 1/energy^2 for treatment in momentum space.
+			escape_term : Total escape/sink term of the PDE (from radiation modules).
+			source_term : Total source/Injection term of the PDE (from radiation modules).
+
 	"""
 
 
 	def __init__(self, grid_parameters, delta_t, solver_settings, source_parameters = None, module_list = None):
-		self.module_list = module_list
+		"""
+		Initialize the SimulationManager
+
+		Args: 
+
+			grid_parameters (dict):	Specifics of the grid. Containing number of 
+											grid points ('BIN_X', int), 
+											the minimum grid point ('X_I', int), 
+											grid spacing ('D_X', int)
+											and type of grid ('type_grid', 'lin'/'log')
+			delta_t (float): Timestep in seconds
+			solver_settings (dict): Solver settings. Containing
+											whether to include kompaneets kernel ('include_kompaneets', Bool), 
+											if extended by something ('kompaneets_extended_by', 'energy'/'momentum'/'none'),
+											if Crank-Nicolson to be applied ('CN_solver', Bool),
+											if running in phase space ('phase_space', Bool) 
+			source_parameters (dict): Holding source parameters like electron number density, dimensionless temperature. Optional, pre-set to empty. Can be updated later.
+			module_list (list): List of all radiation modules to be used, each specified by touple (filename, classname). Optional, pre-set to empty list. Can be updated later.
+
+		"""
+		if module_list is None:
+			self.module_list = []
+		else:
+			self.module_list = module_list
 
 		self.grid_parameters = dict()
 		self.grid_parameters['BIN_X'] = grid_parameters['BIN_X']
@@ -60,15 +112,12 @@ class SimulationManager(object):
 		self.source_parameters = dict()
 
 		# Overwrite with initialisation settings
-		for key in source_parameters:
-			self.source_parameters[key] = source_parameters[key]
+		if source_parameters is not None:
+			for key in source_parameters:
+				self.source_parameters[key] = source_parameters[key]
 
 		self.N = 0 # total photon number
 		self.E = 0 # total energy in photons
-
-		for key in source_parameters:
-			self.source_parameters[key] = source_parameters[key]
-
 
 		# settings for the solver
 		self.time = 0
@@ -85,9 +134,9 @@ class SimulationManager(object):
 
 
 		# Overwrite with initialisation settings
-		for key in solver_settings:
-			self.solver_settings[key] = solver_settings[key]
-
+		if solver_settings is not None : 
+			for key in solver_settings:
+				self.solver_settings[key] = solver_settings[key]
 
 		self.initialise_arrays()
 
@@ -153,7 +202,7 @@ class SimulationManager(object):
 		self.initialise_modules()
 		self.initialise_kernels()
 
-		if input_array: 
+		if input_array is not None: 
 			if len(input_array) == self.BIN_X:
 				self._photonarray = deepcopy(input_array)
 			else:
@@ -254,7 +303,7 @@ class SimulationManager(object):
 
 		#self._ccsolver._compute_boundary()
 		# let the solver evolve a timestep
-		self._ccsolver.solve_time_step(solver = self.solver_settings['solver_type'])
+		self._ccsolver.solve_time_step()
 
 		# update the core-internal photon array, and export other terms from the solver for easy readout
 		self._photonarray = self._ccsolver.n
