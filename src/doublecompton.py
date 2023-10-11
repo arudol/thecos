@@ -2,7 +2,7 @@ import numpy as np
 from consts import * 
 from scipy.integrate import simps
  ######################################################################################
- # This file is part of THECOS (https://github.com/thecos).
+ # This file is part of THECOS (https://github.com/arudol/thecos).
  # Copyright (c) 2023 Annika Rudolph.
  # 
  # This program is free software: you can redistribute it and/or modify  

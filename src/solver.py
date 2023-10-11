@@ -1,5 +1,5 @@
  ######################################################################################
- # This file is part of THECOS (https://github.com/thecos).
+ # This file is part of THECOS (https://github.com/arudol/thecos).
  # Copyright (c) 2023 Annika Rudolph.
  # It includes some of the functionality of pychangcooper (https://github.com/grburgess/pychangcooper), although significantly altered.
  # Copyright (c) 2020 J. Michael Burgess.

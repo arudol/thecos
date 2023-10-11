@@ -1,5 +1,5 @@
  ######################################################################################
- # This file is part of THECOS (https://github.com/thecos).
+ # This file is part of THECOS (https://github.com/arudol/thecos).
  # Copyright (c) 2023 Annika Rudolph.
  # 
  # This program is free software: you can redistribute it and/or modify  
@@ -113,7 +113,7 @@ class Adiabatic(object):
 
 		;returns: t_ad , the adiabatic cooling timescale [s]
 		"""
-		t_ad = self._radius/ self._lorentz / (c0 # beta(self._lorentz))/ self._PL
+		t_ad = self._radius/ self._lorentz / (c0 * beta(self._lorentz))/ self._PL
 		return t_ad
 
 	def adiabatic_escape(self):

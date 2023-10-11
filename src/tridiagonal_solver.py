@@ -1,7 +1,7 @@
  ######################################################################################
  # This file is part of pychangcooper (https://github.com/grburgess/pychangcooper).
  # Copyright (c) 2020 J. Michael Burgess.
- # It was included as a part of THECOS THECOS (https://github.com/thecos).
+ # It was included as a part of THECOS THECOS (https://github.com/arudol/thecos).
  # Copyright (c) 2023 Annika Rudolph.
  # 
  # This program is free software: you can redistribute it and/or modify  
